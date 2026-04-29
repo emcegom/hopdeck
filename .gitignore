@@ -1,0 +1,23 @@
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+DerivedData/
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Hopdeck local runtime data
+.hopdeck/
+hosts.json
+vault.json
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
