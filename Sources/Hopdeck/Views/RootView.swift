@@ -52,7 +52,8 @@ struct RootView: View {
             HostListView(
                 hosts: filteredHosts,
                 selectedHostID: $selectedHostID,
-                searchText: $searchText
+                searchText: $searchText,
+                onConnect: { connect(to: $0) }
             )
         } detail: {
             if let selectedHost {

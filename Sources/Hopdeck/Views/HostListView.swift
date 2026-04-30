@@ -4,6 +4,7 @@ struct HostListView: View {
     let hosts: [SSHHost]
     @Binding var selectedHostID: SSHHost.ID?
     @Binding var searchText: String
+    let onConnect: (SSHHost) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,6 +15,11 @@ struct HostListView: View {
             List(hosts, selection: $selectedHostID) { host in
                 HostRowView(host: host)
                     .tag(host.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        selectedHostID = host.id
+                        onConnect(host)
+                    }
             }
         }
         .navigationSplitViewColumnWidth(min: 280, ideal: 340)
