@@ -77,4 +77,29 @@ mod tests {
 
         assert_eq!(store.load().unwrap(), settings);
     }
+
+    #[test]
+    fn loads_legacy_partial_settings_with_defaults() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{
+  "version": 1,
+  "terminal": {
+    "fontSize": 15
+  }
+}"#,
+        )
+        .unwrap();
+        let store = SettingsStore::with_path(path);
+
+        let settings = store.load().unwrap();
+
+        assert_eq!(settings.version, 1);
+        assert_eq!(settings.terminal.font_size, 15);
+        assert_eq!(settings.terminal.cursor_style, "block");
+        assert_eq!(settings.vault.mode, "plain");
+        assert!(settings.connection.auto_login);
+    }
 }
