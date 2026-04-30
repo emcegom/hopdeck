@@ -13,6 +13,16 @@ type HostEditorState =
       host: Host;
     }
   | null;
+type FolderNode = Extract<TreeNode, { type: "folder" }>;
+type FolderEditorState =
+  | {
+      mode: "create";
+    }
+  | {
+      mode: "edit";
+      folder: FolderNode;
+    }
+  | null;
 
 function App() {
   const [document, setDocument] = useState<HostDocument | null>(null);
@@ -21,7 +31,7 @@ function App() {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [hostEditor, setHostEditor] = useState<HostEditorState>(null);
-  const [isFolderEditorOpen, setIsFolderEditorOpen] = useState(false);
+  const [folderEditor, setFolderEditor] = useState<FolderEditorState>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +160,35 @@ function App() {
     setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
   }, []);
 
+  const renameFolder = useCallback(async (folderId: string, name: string) => {
+    const nextDocument = await invoke<HostDocument>("update_folder", { folderId, name });
+    setDocument(nextDocument);
+  }, []);
+
+  const deleteFolder = useCallback(
+    async (folderId: string) => {
+      const folder = findFolderById(document?.tree ?? [], folderId);
+      const deletedHostIds = new Set(folder ? collectHostIds(folder.children) : []);
+      const nextDocument = await invoke<HostDocument>("delete_folder", { folderId });
+
+      setDocument(nextDocument);
+      setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
+      setSessions((current) => {
+        const nextSessions = current.filter((session) => !deletedHostIds.has(session.hostId));
+        setActiveSessionId((currentActiveSessionId) =>
+          nextSessions.some((session) => session.id === currentActiveSessionId)
+            ? currentActiveSessionId
+            : nextSessions[0]?.id ?? null
+        );
+        return nextSessions;
+      });
+      setSelectedHostId((current) =>
+        current && deletedHostIds.has(current) ? firstHostId(nextDocument.tree, nextDocument.hosts) : current
+      );
+    },
+    [document]
+  );
+
   const closeSession = useCallback((sessionId: string) => {
     setSessions((current) => {
       const nextSessions = current.filter((session) => session.id !== sessionId);
@@ -186,7 +225,7 @@ function App() {
             <button
               className="icon-button"
               type="button"
-              onClick={() => setIsFolderEditorOpen(true)}
+              onClick={() => setFolderEditor({ mode: "create" })}
               title="New folder"
             >
               <span className="new-folder-icon" aria-hidden="true" />
@@ -229,6 +268,10 @@ function App() {
             onToggleFolder={toggleFolder}
             onSelectHost={(hostId) => setSelectedHostId(hostId)}
             onOpenHost={openHost}
+            onEditFolder={(folder) => {
+              const sourceFolder = findFolderById(document?.tree ?? [], folder.id) ?? folder;
+              setFolderEditor({ mode: "edit", folder: sourceFolder });
+            }}
             onEditHost={(hostId) => {
               const host = document?.hosts[hostId];
               if (host) {
@@ -260,8 +303,15 @@ function App() {
         />
       ) : null}
 
-      {isFolderEditorOpen ? (
-        <FolderEditorModal onClose={() => setIsFolderEditorOpen(false)} onCreate={createFolder} />
+      {folderEditor ? (
+        <FolderEditorModal
+          folder={folderEditor.mode === "edit" ? folderEditor.folder : undefined}
+          mode={folderEditor.mode}
+          onClose={() => setFolderEditor(null)}
+          onCreate={createFolder}
+          onDelete={folderEditor.mode === "edit" ? deleteFolder : undefined}
+          onRename={folderEditor.mode === "edit" ? renameFolder : undefined}
+        />
       ) : null}
     </main>
   );
@@ -293,6 +343,39 @@ const collectFolderIds = (tree: TreeNode[]): string[] => {
   }
 
   return ids;
+};
+
+const findFolderById = (tree: TreeNode[], folderId: string): FolderNode | null => {
+  for (const node of tree) {
+    if (node.type === "hostRef") {
+      continue;
+    }
+
+    if (node.id === folderId) {
+      return node;
+    }
+
+    const nested = findFolderById(node.children, folderId);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+};
+
+const collectHostIds = (tree: TreeNode[]): string[] => {
+  const hostIds: string[] = [];
+
+  for (const node of tree) {
+    if (node.type === "hostRef") {
+      hostIds.push(node.hostId);
+    } else {
+      hostIds.push(...collectHostIds(node.children));
+    }
+  }
+
+  return hostIds;
 };
 
 const filterTree = (tree: TreeNode[], hosts: Record<string, Host>, query: string): TreeNode[] => {

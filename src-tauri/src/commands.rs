@@ -21,6 +21,16 @@ pub fn create_folder(parent_id: Option<String>, name: String) -> Result<HostDocu
 }
 
 #[tauri::command]
+pub fn update_folder(folder_id: String, name: String) -> Result<HostDocument> {
+    HostStore::default()?.update_folder(folder_id, name)
+}
+
+#[tauri::command]
+pub fn delete_folder(folder_id: String) -> Result<HostDocument> {
+    HostStore::default()?.delete_folder(folder_id)
+}
+
+#[tauri::command]
 pub fn create_host(parent_id: Option<String>, host: Host) -> Result<HostDocument> {
     HostStore::default()?.create_host(parent_id, host)
 }

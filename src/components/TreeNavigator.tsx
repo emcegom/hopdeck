@@ -10,6 +10,7 @@ interface TreeNavigatorProps {
   onToggleFolder: (folderId: string) => void;
   onSelectHost: (hostId: string) => void;
   onOpenHost: (hostId: string) => void;
+  onEditFolder: (folder: Extract<TreeNode, { type: "folder" }>) => void;
   onEditHost: (hostId: string) => void;
 }
 
@@ -21,6 +22,7 @@ export function TreeNavigator({
   onToggleFolder,
   onSelectHost,
   onOpenHost,
+  onEditFolder,
   onEditHost
 }: TreeNavigatorProps) {
   if (tree.length === 0) {
@@ -45,6 +47,7 @@ export function TreeNavigator({
           onToggleFolder={onToggleFolder}
           onSelectHost={onSelectHost}
           onOpenHost={onOpenHost}
+          onEditFolder={onEditFolder}
           onEditHost={onEditHost}
         />
       ))}
@@ -66,10 +69,15 @@ function TreeRow({
   onToggleFolder,
   onSelectHost,
   onOpenHost,
+  onEditFolder,
   onEditHost
 }: TreeRowProps) {
   if (node.type === "folder") {
     const isExpanded = expandedNodeIds.has(node.id);
+    const editFolder = (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      onEditFolder(node);
+    };
 
     return (
       <div className="tree-group">
@@ -80,6 +88,7 @@ function TreeRow({
           aria-expanded={isExpanded}
           title={isExpanded ? "Collapse folder" : "Expand folder"}
           onClick={() => onToggleFolder(node.id)}
+          onContextMenu={editFolder}
         >
           <span className="tree-disclosure" aria-hidden="true" />
           <span className="tree-folder-icon" aria-hidden="true" />
@@ -99,6 +108,7 @@ function TreeRow({
                 onToggleFolder={onToggleFolder}
                 onSelectHost={onSelectHost}
                 onOpenHost={onOpenHost}
+                onEditFolder={onEditFolder}
                 onEditHost={onEditHost}
               />
             ))}

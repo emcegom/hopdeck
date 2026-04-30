@@ -12,6 +12,8 @@ pub fn run() {
             commands::get_host_document,
             commands::save_host_document,
             commands::create_folder,
+            commands::update_folder,
+            commands::delete_folder,
             commands::create_host,
             commands::update_host,
             commands::delete_host,

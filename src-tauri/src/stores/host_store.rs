@@ -72,6 +72,41 @@ impl HostStore {
         Ok(document)
     }
 
+    pub fn update_folder(&self, folder_id: String, name: String) -> Result<HostDocument> {
+        let mut document = self.load()?;
+        let next_name = name.trim();
+
+        if next_name.is_empty() {
+            return Err(HopdeckError::InvalidRequest(
+                "folder name is required".to_string(),
+            ));
+        }
+
+        if !rename_folder(&mut document.tree, &folder_id, next_name) {
+            return Err(HopdeckError::TreeNodeNotFound(folder_id));
+        }
+
+        self.save(&document)?;
+        Ok(document)
+    }
+
+    pub fn delete_folder(&self, folder_id: String) -> Result<HostDocument> {
+        let mut document = self.load()?;
+        let mut removed_host_ids = Vec::new();
+
+        if !remove_folder(&mut document.tree, &folder_id, &mut removed_host_ids) {
+            return Err(HopdeckError::TreeNodeNotFound(folder_id));
+        }
+
+        for host_id in &removed_host_ids {
+            document.hosts.remove(host_id);
+        }
+        prune_jump_chains(&mut document, &removed_host_ids);
+
+        self.save(&document)?;
+        Ok(document)
+    }
+
     pub fn create_host(&self, parent_id: Option<String>, mut host: Host) -> Result<HostDocument> {
         let mut document = self.load()?;
         let now = Utc::now();
@@ -105,6 +140,7 @@ impl HostStore {
         let mut document = self.load()?;
         document.hosts.remove(&host_id);
         remove_host_refs(&mut document.tree, &host_id);
+        prune_jump_chains(&mut document, &[host_id]);
         self.save(&document)?;
         Ok(document)
     }
@@ -286,6 +322,65 @@ fn insert_node_in_folder(nodes: &mut [TreeNode], parent_id: &str, node: TreeNode
     false
 }
 
+fn rename_folder(nodes: &mut [TreeNode], folder_id: &str, name: &str) -> bool {
+    for node in nodes {
+        if let TreeNode::Folder {
+            id,
+            name: folder_name,
+            children,
+            ..
+        } = node
+        {
+            if id == folder_id {
+                *folder_name = name.to_string();
+                return true;
+            }
+
+            if rename_folder(children, folder_id, name) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn remove_folder(
+    nodes: &mut Vec<TreeNode>,
+    folder_id: &str,
+    removed_host_ids: &mut Vec<String>,
+) -> bool {
+    if let Some(index) = nodes.iter().position(|node| match node {
+        TreeNode::Folder { id, .. } => id == folder_id,
+        TreeNode::HostRef { .. } => false,
+    }) {
+        let node = nodes.remove(index);
+        collect_host_refs(&node, removed_host_ids);
+        return true;
+    }
+
+    for node in nodes {
+        if let TreeNode::Folder { children, .. } = node {
+            if remove_folder(children, folder_id, removed_host_ids) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn collect_host_refs(node: &TreeNode, host_ids: &mut Vec<String>) {
+    match node {
+        TreeNode::Folder { children, .. } => {
+            for child in children {
+                collect_host_refs(child, host_ids);
+            }
+        }
+        TreeNode::HostRef { host_id, .. } => host_ids.push(host_id.clone()),
+    }
+}
+
 fn remove_host_refs(nodes: &mut Vec<TreeNode>, host_id: &str) {
     nodes.retain(|node| match node {
         TreeNode::Folder { .. } => true,
@@ -299,6 +394,17 @@ fn remove_host_refs(nodes: &mut Vec<TreeNode>, host_id: &str) {
         if let TreeNode::Folder { children, .. } = node {
             remove_host_refs(children, host_id);
         }
+    }
+}
+
+fn prune_jump_chains(document: &mut HostDocument, removed_host_ids: &[String]) {
+    if removed_host_ids.is_empty() {
+        return;
+    }
+
+    for host in document.hosts.values_mut() {
+        host.jump_chain
+            .retain(|jump_host_id| !removed_host_ids.contains(jump_host_id));
     }
 }
 
@@ -328,6 +434,49 @@ mod tests {
 
         assert!(document.tree.iter().any(|node| match node {
             TreeNode::Folder { name, .. } => name == "Production",
+            TreeNode::HostRef { .. } => false,
+        }));
+    }
+
+    #[test]
+    fn renames_folder() {
+        let dir = tempdir().unwrap();
+        let store = HostStore::with_path(dir.path().join("hosts.json"));
+
+        let created = store.create_folder(None, "Production".to_string()).unwrap();
+        let folder_id = match &created.tree[0] {
+            TreeNode::Folder { id, .. } => id.clone(),
+            TreeNode::HostRef { .. } => panic!("expected folder"),
+        };
+
+        let document = store
+            .update_folder(folder_id, "Production SSH".to_string())
+            .unwrap();
+
+        assert!(matches!(
+            &document.tree[0],
+            TreeNode::Folder { name, .. } if name == "Production SSH"
+        ));
+    }
+
+    #[test]
+    fn deletes_folder_and_nested_hosts() {
+        let dir = tempdir().unwrap();
+        let store = HostStore::with_path(dir.path().join("hosts.json"));
+        let document = HostDocument::sample();
+
+        store.replace_document(document).unwrap();
+        let document = store
+            .delete_folder("folder-production-jump-hosts".to_string())
+            .unwrap();
+
+        assert!(!document.hosts.contains_key("jump-prod"));
+        assert_eq!(
+            document.hosts["prod-app-01"].jump_chain,
+            Vec::<String>::new()
+        );
+        assert!(!document.tree.iter().any(|node| match node {
+            TreeNode::Folder { id, .. } => id == "folder-production-jump-hosts",
             TreeNode::HostRef { .. } => false,
         }));
     }
