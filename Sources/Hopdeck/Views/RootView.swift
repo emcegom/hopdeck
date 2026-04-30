@@ -5,7 +5,18 @@ struct RootView: View {
     @State private var selectedHostID: SSHHost.ID? = SSHHost.samples.first?.id
     @State private var searchText = ""
     @State private var selectedGroup = "All Hosts"
+    @State private var settings = AppSettings()
     @State private var launchError: String?
+    @State private var statusMessage: String?
+    @State private var editingHost: SSHHost?
+    @State private var isAddingHost = false
+    @State private var isShowingSettings = false
+    @State private var revealState: PasswordRevealState?
+
+    private let hostStore = HostStore()
+    private let vault = PasswordVault()
+    private let settingsStore = AppSettingsStore()
+    private let clipboard = ClipboardService()
 
     private var groups: [String] {
         let hostGroups = Set(hosts.map(\.group)).sorted()
@@ -45,14 +56,76 @@ struct RootView: View {
             )
         } detail: {
             if let selectedHost {
-                HostDetailView(host: selectedHost) {
-                    connect(to: selectedHost)
-                }
+                HostDetailView(
+                    host: selectedHost,
+                    sshCommand: (try? SSHCommandBuilder().buildCommand(for: selectedHost, allHosts: hosts).command) ?? "",
+                    onConnect: { connect(to: selectedHost) },
+                    onEdit: { editingHost = selectedHost },
+                    onDelete: { delete(selectedHost) },
+                    onCopyPassword: { copyPassword(for: selectedHost) },
+                    onRevealPassword: { revealPassword(for: selectedHost) },
+                    onCopyCommand: { copyCommand(for: selectedHost) }
+                )
             } else {
                 ContentUnavailableView("No Host Selected", systemImage: "server.rack")
             }
         }
         .navigationTitle("Hopdeck")
+        .toolbar {
+            ToolbarItemGroup {
+                Button {
+                    isAddingHost = true
+                } label: {
+                    Label("Add Host", systemImage: "plus")
+                }
+
+                Button {
+                    isShowingSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
+        }
+        .onAppear(perform: loadState)
+        .sheet(isPresented: $isAddingHost) {
+            HostEditorView(host: nil, allHosts: hosts) { host, password in
+                save(host, password: password)
+                isAddingHost = false
+            } onCancel: {
+                isAddingHost = false
+            }
+        }
+        .sheet(item: $editingHost) { host in
+            HostEditorView(host: host, allHosts: hosts) { updatedHost, password in
+                save(updatedHost, password: password)
+                editingHost = nil
+            } onCancel: {
+                editingHost = nil
+            }
+        }
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView(settings: $settings) {
+                saveSettings()
+                isShowingSettings = false
+            } onCancel: {
+                loadSettings()
+                isShowingSettings = false
+            }
+        }
+        .sheet(item: $revealState) { state in
+            PasswordRevealView(
+                title: state.hostAlias,
+                username: state.item.username,
+                password: state.item.password,
+                onCopy: {
+                    copy(state.item.password)
+                    revealState = nil
+                },
+                onClose: {
+                    revealState = nil
+                }
+            )
+        }
         .alert("Unable to Connect", isPresented: Binding(
             get: { launchError != nil },
             set: { if !$0 { launchError = nil } }
@@ -61,13 +134,177 @@ struct RootView: View {
         } message: {
             Text(launchError ?? "")
         }
+        .alert("Hopdeck", isPresented: Binding(
+            get: { statusMessage != nil },
+            set: { if !$0 { statusMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(statusMessage ?? "")
+        }
     }
 
     private func connect(to host: SSHHost) {
         do {
-            try TerminalLauncher(backend: .terminalApp).connect(to: host)
+            let builder = SSHCommandBuilder()
+            let resolved = try builder.buildCommand(for: host, allHosts: hosts)
+            let command = try commandForLaunch(host: host, resolved: resolved)
+            try TerminalLauncher(
+                backend: settings.defaultTerminal,
+                customTemplate: settings.customTerminalTemplate
+            ).run(command: command)
+            markConnected(host)
         } catch {
             launchError = error.localizedDescription
         }
     }
+
+    private func commandForLaunch(host: SSHHost, resolved: ResolvedSSHCommand) throws -> String {
+        guard settings.autoLoginEnabled, host.auth.autoLogin else {
+            return resolved.command
+        }
+
+        let credentials = try credentialsForAutoLogin(host: host)
+        guard !credentials.isEmpty else {
+            return resolved.command
+        }
+
+        return try AutoLoginRunner().makeCommand(sshCommand: resolved.command, credentials: credentials)
+    }
+
+    private func credentialsForAutoLogin(host: SSHHost) throws -> [AutoLoginCredentials] {
+        var credentials: [AutoLoginCredentials] = []
+
+        for jumpAlias in host.jumpChain {
+            guard let jumpHost = hosts.first(where: { $0.id == jumpAlias || $0.alias == jumpAlias }),
+                  let passwordRef = jumpHost.auth.passwordRef,
+                  let password = try vault.password(for: passwordRef) else {
+                continue
+            }
+
+            credentials.append(AutoLoginCredentials(passwordRef: passwordRef, password: password))
+        }
+
+        if let passwordRef = host.auth.passwordRef,
+           let password = try vault.password(for: passwordRef) {
+            credentials.append(AutoLoginCredentials(passwordRef: passwordRef, password: password))
+        }
+
+        return credentials
+    }
+
+    private func loadState() {
+        do {
+            hosts = try hostStore.loadHosts()
+            selectedHostID = hosts.first?.id
+        } catch {
+            launchError = error.localizedDescription
+        }
+
+        loadSettings()
+    }
+
+    private func loadSettings() {
+        do {
+            settings = try settingsStore.load()
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func saveSettings() {
+        do {
+            try settingsStore.save(settings)
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func save(_ host: SSHHost, password: String?) {
+        do {
+            hosts = try hostStore.upsertHost(host)
+            selectedHostID = host.id
+
+            if let password, let passwordRef = host.auth.passwordRef {
+                try vault.setItem(PasswordVaultItem(username: host.user, password: password), for: passwordRef)
+            }
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func delete(_ host: SSHHost) {
+        do {
+            hosts = try hostStore.deleteHost(id: host.id)
+            selectedHostID = hosts.first?.id
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func markConnected(_ host: SSHHost) {
+        var updated = host
+        updated.lastConnectedAt = Date()
+        do {
+            hosts = try hostStore.upsertHost(updated)
+        } catch {
+            statusMessage = "Connected, but could not update recent activity."
+        }
+    }
+
+    private func copyPassword(for host: SSHHost) {
+        do {
+            guard let item = try vaultItem(for: host) else {
+                statusMessage = "No password is saved for \(host.alias)."
+                return
+            }
+
+            copy(item.password)
+            statusMessage = "Password copied. Clipboard clears in \(settings.clipboardClearSeconds) seconds."
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func revealPassword(for host: SSHHost) {
+        do {
+            guard let item = try vaultItem(for: host) else {
+                statusMessage = "No password is saved for \(host.alias)."
+                return
+            }
+
+            revealState = PasswordRevealState(hostAlias: host.alias, item: item)
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func copyCommand(for host: SSHHost) {
+        do {
+            let command = try SSHCommandBuilder().buildCommand(for: host, allHosts: hosts).command
+            copy(command)
+            statusMessage = "SSH command copied."
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func vaultItem(for host: SSHHost) throws -> PasswordVaultItem? {
+        guard let passwordRef = host.auth.passwordRef else {
+            return nil
+        }
+
+        return try vault.item(for: passwordRef)
+    }
+
+    private func copy(_ value: String) {
+        clipboard.copy(value)
+        clipboard.clearIfStill(value, after: settings.clipboardClearSeconds)
+    }
+}
+
+private struct PasswordRevealState: Identifiable {
+    let id = UUID()
+    var hostAlias: String
+    var item: PasswordVaultItem
 }

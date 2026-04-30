@@ -13,6 +13,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Hopdeck"
+        ),
+        .testTarget(
+            name: "HopdeckTests",
+            dependencies: ["Hopdeck"]
         )
     ]
 )

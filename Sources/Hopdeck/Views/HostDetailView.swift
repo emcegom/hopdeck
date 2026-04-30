@@ -2,7 +2,13 @@ import SwiftUI
 
 struct HostDetailView: View {
     let host: SSHHost
+    let sshCommand: String
     let onConnect: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    let onCopyPassword: () -> Void
+    let onRevealPassword: () -> Void
+    let onCopyCommand: () -> Void
 
     var body: some View {
         ScrollView {
@@ -12,6 +18,7 @@ struct HostDetailView: View {
                 jumpSection
                 authSection
                 actionsSection
+                commandSection
                 notesSection
             }
             .padding(28)
@@ -60,12 +67,27 @@ struct HostDetailView: View {
                 Button("Connect", action: onConnect)
                     .buttonStyle(.borderedProminent)
 
-                Button("Copy Password") {}
+                Button("Edit", action: onEdit)
+
+                Button("Copy Password", action: onCopyPassword)
                     .disabled(host.auth.passwordRef == nil)
 
-                Button("Reveal Password") {}
+                Button("Reveal Password", action: onRevealPassword)
                     .disabled(host.auth.passwordRef == nil)
+
+                Button("Copy Command", action: onCopyCommand)
+
+                Button("Delete", role: .destructive, action: onDelete)
             }
+        }
+    }
+
+    private var commandSection: some View {
+        DetailSection(title: "Command") {
+            Text(sshCommand.isEmpty ? "Unable to build command." : sshCommand)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(sshCommand.isEmpty ? .secondary : .primary)
         }
     }
 

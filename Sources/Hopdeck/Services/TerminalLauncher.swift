@@ -4,6 +4,7 @@ import Foundation
 enum TerminalLaunchError: Error, LocalizedError {
     case appleScriptFailed(String)
     case unsupportedBackend(TerminalBackend)
+    case processLaunchFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -11,15 +12,19 @@ enum TerminalLaunchError: Error, LocalizedError {
             return message
         case .unsupportedBackend(let backend):
             return "\(backend.label) is not implemented yet."
+        case .processLaunchFailed(let message):
+            return message
         }
     }
 }
 
 struct TerminalLauncher {
     var backend: TerminalBackend = .terminalApp
+    var customTemplate: String = "{{command}}"
 
-    func connect(to host: SSHHost) throws {
-        try run(command: sshCommand(for: host))
+    func connect(to host: SSHHost, allHosts: [SSHHost]) throws {
+        let resolved = try SSHCommandBuilder().buildCommand(for: host, allHosts: allHosts)
+        try run(command: resolved.command)
     }
 
     func sshCommand(for host: SSHHost) -> String {
@@ -37,8 +42,17 @@ struct TerminalLauncher {
             try runInTerminalApp(command)
         case .iTerm2:
             try runIniTerm2(command)
-        case .wezTerm, .ghostty, .custom:
-            throw TerminalLaunchError.unsupportedBackend(backend)
+        case .wezTerm:
+            try launchProcess("/usr/bin/env", arguments: ["wezterm", "start", "--", "/bin/zsh", "-lc", command])
+        case .ghostty:
+            try launchProcess("/usr/bin/env", arguments: ["ghostty", "-e", "/bin/zsh", "-lc", command])
+        case .alacritty:
+            try launchProcess("/usr/bin/env", arguments: ["alacritty", "-e", "/bin/zsh", "-lc", command])
+        case .kitty:
+            try launchProcess("/usr/bin/env", arguments: ["kitty", "/bin/zsh", "-lc", command])
+        case .custom:
+            let rendered = customTemplate.replacingOccurrences(of: "{{command}}", with: command)
+            try launchProcess("/bin/zsh", arguments: ["-lc", rendered])
         }
     }
 
@@ -77,6 +91,18 @@ struct TerminalLauncher {
 
         if let error {
             throw TerminalLaunchError.appleScriptFailed(error.description)
+        }
+    }
+
+    private func launchProcess(_ executable: String, arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+
+        do {
+            try process.run()
+        } catch {
+            throw TerminalLaunchError.processLaunchFailed(error.localizedDescription)
         }
     }
 

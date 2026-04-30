@@ -5,6 +5,8 @@ enum TerminalBackend: String, CaseIterable, Identifiable, Codable {
     case iTerm2
     case wezTerm
     case ghostty
+    case alacritty
+    case kitty
     case custom
 
     var id: String {
@@ -21,6 +23,10 @@ enum TerminalBackend: String, CaseIterable, Identifiable, Codable {
             return "WezTerm"
         case .ghostty:
             return "Ghostty"
+        case .alacritty:
+            return "Alacritty"
+        case .kitty:
+            return "kitty"
         case .custom:
             return "Custom"
         }
