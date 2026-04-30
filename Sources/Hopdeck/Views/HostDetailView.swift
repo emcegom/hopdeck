@@ -64,23 +64,30 @@ struct HostDetailView: View {
 
     private var actionsSection: some View {
         DetailSection(title: "Actions") {
-            HStack(spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 10)], alignment: .leading, spacing: 10) {
                 Button("Connect", action: onConnect)
                     .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
 
                 Button("Edit", action: onEdit)
+                    .frame(maxWidth: .infinity)
 
                 Button(host.tags.contains("favorite") ? "Unfavorite" : "Favorite", action: onToggleFavorite)
+                    .frame(maxWidth: .infinity)
 
                 Button("Copy Password", action: onCopyPassword)
                     .disabled(host.auth.passwordRef == nil)
+                    .frame(maxWidth: .infinity)
 
                 Button("Reveal Password", action: onRevealPassword)
                     .disabled(host.auth.passwordRef == nil)
+                    .frame(maxWidth: .infinity)
 
                 Button("Copy Command", action: onCopyCommand)
+                    .frame(maxWidth: .infinity)
 
                 Button("Delete", role: .destructive, action: onDelete)
+                    .frame(maxWidth: .infinity)
             }
         }
     }

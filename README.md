@@ -54,4 +54,18 @@ Or build from the terminal:
 swift build
 ```
 
+Run tests:
+
+```zsh
+swift test
+```
+
+Build a local macOS app bundle:
+
+```zsh
+chmod +x scripts/build_app.sh
+scripts/build_app.sh
+open .build/app/Hopdeck.app
+```
+
 The first production app bundle target can be added once the MVP screens and services settle.

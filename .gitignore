@@ -21,3 +21,6 @@ vault.json
 *.log
 *.tmp
 *.swp
+
+# Packaged local app builds
+.build/app/
