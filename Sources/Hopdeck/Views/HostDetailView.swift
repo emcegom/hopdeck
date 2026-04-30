@@ -6,6 +6,7 @@ struct HostDetailView: View {
     let onConnect: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
+    let onToggleFavorite: () -> Void
     let onCopyPassword: () -> Void
     let onRevealPassword: () -> Void
     let onCopyCommand: () -> Void
@@ -68,6 +69,8 @@ struct HostDetailView: View {
                     .buttonStyle(.borderedProminent)
 
                 Button("Edit", action: onEdit)
+
+                Button(host.tags.contains("favorite") ? "Unfavorite" : "Favorite", action: onToggleFavorite)
 
                 Button("Copy Password", action: onCopyPassword)
                     .disabled(host.auth.passwordRef == nil)

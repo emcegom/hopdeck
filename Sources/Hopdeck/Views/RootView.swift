@@ -27,8 +27,8 @@ struct RootView: View {
         hosts.filter { host in
             let matchesGroup = selectedGroup == "All Hosts"
                 || selectedGroup == host.group
-                || selectedGroup == "Favorites"
-                || selectedGroup == "Recent"
+                || (selectedGroup == "Favorites" && host.tags.contains("favorite"))
+                || (selectedGroup == "Recent" && host.lastConnectedAt != nil)
 
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             let matchesSearch = query.isEmpty
@@ -62,6 +62,7 @@ struct RootView: View {
                     onConnect: { connect(to: selectedHost) },
                     onEdit: { editingHost = selectedHost },
                     onDelete: { delete(selectedHost) },
+                    onToggleFavorite: { toggleFavorite(selectedHost) },
                     onCopyPassword: { copyPassword(for: selectedHost) },
                     onRevealPassword: { revealPassword(for: selectedHost) },
                     onCopyCommand: { copyCommand(for: selectedHost) }
@@ -83,6 +84,12 @@ struct RootView: View {
                     isShowingSettings = true
                 } label: {
                     Label("Settings", systemImage: "gearshape")
+                }
+
+                Button {
+                    importSSHConfig()
+                } label: {
+                    Label("Import SSH Config", systemImage: "square.and.arrow.down")
                 }
             }
         }
@@ -242,6 +249,17 @@ struct RootView: View {
         }
     }
 
+    private func toggleFavorite(_ host: SSHHost) {
+        var updated = host
+        if updated.tags.contains("favorite") {
+            updated.tags.removeAll { $0 == "favorite" }
+        } else {
+            updated.tags.append("favorite")
+        }
+
+        save(updated, password: nil)
+    }
+
     private func markConnected(_ host: SSHHost) {
         var updated = host
         updated.lastConnectedAt = Date()
@@ -284,6 +302,32 @@ struct RootView: View {
             let command = try SSHCommandBuilder().buildCommand(for: host, allHosts: hosts).command
             copy(command)
             statusMessage = "SSH command copied."
+        } catch {
+            launchError = error.localizedDescription
+        }
+    }
+
+    private func importSSHConfig() {
+        let configURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ssh/config", isDirectory: false)
+
+        do {
+            let text = try String(contentsOf: configURL, encoding: .utf8)
+            let imported = SSHConfigParser().parse(text)
+            var merged = hosts
+
+            for host in imported {
+                if let index = merged.firstIndex(where: { $0.id == host.id || $0.alias == host.alias }) {
+                    merged[index] = host
+                } else {
+                    merged.append(host)
+                }
+            }
+
+            try hostStore.saveHosts(merged)
+            hosts = merged
+            selectedHostID = imported.first?.id ?? selectedHostID
+            statusMessage = "Imported \(imported.count) host\(imported.count == 1 ? "" : "s") from ~/.ssh/config."
         } catch {
             launchError = error.localizedDescription
         }
