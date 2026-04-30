@@ -1,26 +1,20 @@
 .DS_Store
 
-# Swift Package Manager
-.build/
-.swiftpm/
-Package.resolved
+# Node / frontend
+node_modules/
+dist/
+.vite/
 
-# Xcode
-DerivedData/
-*.xcworkspace
-xcuserdata/
-*.xcuserstate
-*.xcscmblueprint
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/schemas/
 
-# Hopdeck local runtime data
+# Local Hopdeck data
 .hopdeck/
-hosts.json
-vault.json
-
-# Logs and temporary files
 *.log
 *.tmp
-*.swp
 
-# Packaged local app builds
-.build/app/
+# IDE
+.idea/
+.vscode/

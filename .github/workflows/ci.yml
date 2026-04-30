@@ -8,21 +8,22 @@ on:
 
 jobs:
   test:
-    name: Swift Tests
     runs-on: macos-15
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-      - name: Build
-        run: swift build
+      - name: Install frontend dependencies
+        run: npm ci
 
-      - name: Test
-        run: swift test
+      - name: Build frontend
+        run: npm run frontend:build
 
-      - name: Build app bundle
-        run: bash scripts/build_app.sh
+      - name: Test Rust backend
+        working-directory: src-tauri
+        run: cargo test

@@ -1,72 +1,72 @@
 # Hopdeck
 
-Hopdeck is a native macOS SSH launchpad for engineers who frequently connect to servers through jump hosts.
+Hopdeck is a local-first SSH jump console built with Rust, Tauri, React, and a real expandable tree model.
 
-The product goal is simple: turn complex SSH targets, jump chains, and saved credentials into a clear local connection panel.
+The goal is to provide an Xshell-like workflow for macOS without depending on AppleScript automation of iTerm2 or Terminal.app.
 
-## Direction
+## Current Direction
 
-- Native macOS interface with SwiftUI.
-- Local-first host and password storage.
-- One-click SSH login through external terminals.
-- Support for direct hosts, single jump hosts, and multi-hop chains.
-- No forced cloud account or sync.
+- Rust backend with Tauri commands.
+- React frontend with a folder-style tree navigator.
+- Host data stored locally in `~/.hopdeck/hosts.json`.
+- Tree model is the primary navigation model.
+- Internal terminal workspace runs through `portable-pty` and xterm.js.
+- Legacy Swift-era `version: 1` host files are migrated into the Rust tree model on launch.
 
-## Current State
+## Interaction Model
 
-This repository contains the first SwiftUI project skeleton plus product and implementation documents.
+- Double-click a host in the left tree to open an SSH session in the terminal workspace.
+- Right-click a host to edit connection settings.
+- Use the sidebar search to filter hosts by alias, address, user, or tag.
+- Delete a host from the edit dialog with a second confirmation click.
+- The right side is reserved for terminals; configuration opens as a modal.
 
-Important docs:
+## Development Requirements
 
-- [Product Design](Docs/PRODUCT_DESIGN.md)
-- [Implementation Plan](Docs/IMPLEMENTATION_PLAN.md)
-- [Rust/Tauri Tree Model Design](Docs/RUST_TAURI_TREE_MODEL_DESIGN.md)
+- Rust and Cargo.
+- Node.js 20+ and npm.
+- macOS Tauri prerequisites.
 
-## Requirements
-
-- macOS 14 or newer.
-- Xcode 15 or newer recommended.
-- Swift 6 compatible toolchain.
-
-Your machine currently has Xcode installed, but if `xcodebuild` still points to Command Line Tools, run:
-
-```zsh
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-```
-
-Then verify:
+## Install Dependencies
 
 ```zsh
-xcodebuild -version
-swift --version
+npm install
 ```
 
-## Development
-
-Open the package in Xcode:
+## Run In Development
 
 ```zsh
-open Package.swift
+npm run dev
 ```
 
-Or build from the terminal:
+## Build Frontend
 
 ```zsh
-swift build
+npm run frontend:build
 ```
 
-Run tests:
+## Test Rust Backend
 
 ```zsh
-swift test
+cd src-tauri
+cargo test
 ```
 
-Build a local macOS app bundle:
+## Build App
 
 ```zsh
-chmod +x scripts/build_app.sh
-scripts/build_app.sh
-open .build/app/Hopdeck.app
+npm run build
 ```
 
-The first production app bundle target can be added once the MVP screens and services settle.
+## Data Files
+
+Hopdeck writes local data under:
+
+```text
+~/.hopdeck/
+  hosts.json
+  vault.json
+  settings.json
+```
+
+The current implementation creates a sample tree on first launch.
