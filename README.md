@@ -20,6 +20,7 @@ Important docs:
 
 - [Product Design](Docs/PRODUCT_DESIGN.md)
 - [Implementation Plan](Docs/IMPLEMENTATION_PLAN.md)
+- [Rust/Tauri Tree Model Design](Docs/RUST_TAURI_TREE_MODEL_DESIGN.md)
 
 ## Requirements
 
