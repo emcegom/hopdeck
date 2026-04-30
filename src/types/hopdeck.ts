@@ -67,6 +67,37 @@ export interface TerminalExitEvent {
   sessionId: string;
 }
 
+export interface VaultItem {
+  username: string;
+  password: string;
+}
+
+export interface VaultDocument {
+  version: number;
+  mode: "plain";
+  items: Record<string, VaultItem>;
+}
+
+export interface AppSettings {
+  version: number;
+  theme: "system" | "light" | "dark";
+  terminal: {
+    fontFamily: string;
+    fontSize: number;
+    cursorStyle: string;
+    backgroundBlur: number;
+  };
+  vault: {
+    mode: string;
+    clearClipboardAfterSeconds: number;
+  };
+  connection: {
+    defaultOpenMode: string;
+    autoLogin: boolean;
+    closeTabOnDisconnect: boolean;
+  };
+}
+
 export const describeAuth = (auth: HostAuth): string => {
   switch (auth.type) {
     case "password":

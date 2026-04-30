@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     io::{Read, Write},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     thread,
 };
 
@@ -12,8 +12,9 @@ use uuid::Uuid;
 
 use crate::{
     errors::{HopdeckError, Result},
+    models::HostAuth,
     ssh,
-    stores::HostStore,
+    stores::{HostStore, VaultStore},
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,7 +36,7 @@ pub struct TerminalManager {
 
 struct PtySession {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     child: Box<dyn Child + Send + Sync>,
 }
 
@@ -65,6 +66,13 @@ pub fn start_terminal_session(
         .ok_or_else(|| HopdeckError::HostNotFound(host_id.clone()))?;
     let resolved = ssh::build_ssh_command(&document, &host_id)?;
     let session_id = format!("session-{}", Uuid::new_v4());
+    let auto_login_password = match &host.auth {
+        HostAuth::Password {
+            password_ref: Some(password_ref),
+            auto_login: true,
+        } => VaultStore::default()?.password_for_ref(password_ref)?,
+        _ => None,
+    };
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -83,7 +91,9 @@ pub fn start_terminal_session(
 
     let child = pair.slave.spawn_command(command).map_err(terminal_error)?;
     let reader = pair.master.try_clone_reader().map_err(terminal_error)?;
-    let writer = pair.master.take_writer().map_err(terminal_error)?;
+    let writer = Arc::new(Mutex::new(
+        pair.master.take_writer().map_err(terminal_error)?,
+    ));
     drop(pair.slave);
 
     state
@@ -94,12 +104,12 @@ pub fn start_terminal_session(
             session_id.clone(),
             PtySession {
                 master: pair.master,
-                writer,
+                writer: Arc::clone(&writer),
                 child,
             },
         );
 
-    spawn_output_reader(app, session_id.clone(), reader);
+    spawn_output_reader(app, session_id.clone(), reader, writer, auto_login_password);
 
     Ok(StartedTerminalSession {
         id: session_id,
@@ -134,11 +144,12 @@ pub fn write_terminal_session(
         HopdeckError::InvalidRequest(format!("terminal session not found: {session_id}"))
     })?;
 
-    session
+    let mut writer = session
         .writer
-        .write_all(data.as_bytes())
-        .map_err(terminal_error)?;
-    session.writer.flush().map_err(terminal_error)?;
+        .lock()
+        .map_err(|_| HopdeckError::Terminal("terminal writer is poisoned".to_string()))?;
+    writer.write_all(data.as_bytes()).map_err(terminal_error)?;
+    writer.flush().map_err(terminal_error)?;
     Ok(())
 }
 
@@ -183,15 +194,31 @@ pub fn close_terminal_session(state: State<'_, TerminalManager>, session_id: Str
     Ok(())
 }
 
-fn spawn_output_reader(app: AppHandle, session_id: String, mut reader: Box<dyn Read + Send>) {
+fn spawn_output_reader(
+    app: AppHandle,
+    session_id: String,
+    mut reader: Box<dyn Read + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    auto_login_password: Option<String>,
+) {
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
+        let mut auto_login = auto_login_password.map(AutoLogin::new);
 
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(size) => {
                     let data = String::from_utf8_lossy(&buffer[..size]).to_string();
+                    if let Some(auto_login) = auto_login.as_mut() {
+                        if auto_login.should_write_password(&data) {
+                            if let Ok(mut writer) = writer.lock() {
+                                let _ = writer.write_all(auto_login.password_input().as_bytes());
+                                let _ = writer.flush();
+                            }
+                        }
+                    }
+
                     let _ = app.emit(
                         "terminal-output",
                         TerminalOutput {
@@ -219,4 +246,133 @@ fn spawn_output_reader(app: AppHandle, session_id: String, mut reader: Box<dyn R
 
 fn terminal_error(error: impl ToString) -> HopdeckError {
     HopdeckError::Terminal(error.to_string())
+}
+
+struct AutoLogin {
+    password: String,
+    detector: PromptDetector,
+    has_written: bool,
+}
+
+impl AutoLogin {
+    fn new(password: String) -> Self {
+        Self {
+            password,
+            detector: PromptDetector::default(),
+            has_written: false,
+        }
+    }
+
+    fn should_write_password(&mut self, data: &str) -> bool {
+        if self.has_written {
+            return false;
+        }
+
+        if self.detector.push_and_detect(data) {
+            self.has_written = true;
+            return true;
+        }
+
+        false
+    }
+
+    fn password_input(&self) -> String {
+        format!("{}\n", self.password)
+    }
+}
+
+#[derive(Default)]
+struct PromptDetector {
+    recent: String,
+}
+
+impl PromptDetector {
+    fn push_and_detect(&mut self, data: &str) -> bool {
+        self.recent.push_str(data);
+        if self.recent.len() > 512 {
+            self.recent = self
+                .recent
+                .chars()
+                .rev()
+                .take(512)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+        }
+
+        is_password_prompt(&self.recent)
+    }
+}
+
+fn is_password_prompt(value: &str) -> bool {
+    let normalized = strip_ansi(value).to_ascii_lowercase();
+    let Some(keyword_index) = normalized
+        .rfind("password")
+        .or_else(|| normalized.rfind("passphrase"))
+    else {
+        return false;
+    };
+    let prompt_tail = normalized[keyword_index..].trim_end();
+
+    !prompt_tail.contains('\n')
+        && !prompt_tail.contains('\r')
+        && (prompt_tail.ends_with(':') || prompt_tail.ends_with("?"))
+}
+
+fn strip_ansi(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AutoLogin, PromptDetector};
+
+    #[test]
+    fn detects_password_prompt_across_chunks() {
+        let mut detector = PromptDetector::default();
+
+        assert!(!detector.push_and_detect("app@host's pass"));
+        assert!(detector.push_and_detect("word:"));
+    }
+
+    #[test]
+    fn detects_key_passphrase_prompt() {
+        let mut detector = PromptDetector::default();
+
+        assert!(detector.push_and_detect("Enter passphrase for key '/Users/zane/.ssh/id_ed25519':"));
+    }
+
+    #[test]
+    fn ignores_non_prompt_password_text() {
+        let mut detector = PromptDetector::default();
+
+        assert!(!detector.push_and_detect("Permission denied, please try again.\r\n"));
+        assert!(!detector.push_and_detect("Password authentication failed\r\n"));
+    }
+
+    #[test]
+    fn auto_login_writes_only_once() {
+        let mut auto_login = AutoLogin::new("secret".to_string());
+
+        assert!(auto_login.should_write_password("Password:"));
+        assert_eq!(auto_login.password_input(), "secret\n");
+        assert!(!auto_login.should_write_password("Password:"));
+    }
 }

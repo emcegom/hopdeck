@@ -1,22 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { FolderEditorModal } from "./components/FolderEditorModal";
 import { HostEditorModal } from "./components/HostEditorModal";
+import { SettingsModal } from "./components/SettingsModal";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
-import { TreeNavigator } from "./components/TreeNavigator";
-import type { Host, HostDocument, TerminalSession, TreeNode } from "./types/hopdeck";
+import { TreeNavigator, type TreeDragSource } from "./components/TreeNavigator";
+import type { AppSettings, Host, HostDocument, TerminalSession, TreeNode, VaultDocument } from "./types/hopdeck";
 
 type HostEditorState =
   | {
       mode: "create" | "edit";
       host: Host;
+      parentFolderId?: string | null;
     }
   | null;
 type FolderNode = Extract<TreeNode, { type: "folder" }>;
 type FolderEditorState =
   | {
       mode: "create";
+      parentFolderId?: string | null;
     }
   | {
       mode: "edit";
@@ -32,6 +35,9 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [hostEditor, setHostEditor] = useState<HostEditorState>(null);
   const [folderEditor, setFolderEditor] = useState<FolderEditorState>(null);
+  const [vault, setVault] = useState<VaultDocument | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,8 +59,14 @@ function App() {
     setError(null);
 
     try {
-      const nextDocument = await invoke<HostDocument>("get_host_document");
+      const [nextDocument, nextVault, nextSettings] = await Promise.all([
+        invoke<HostDocument>("get_host_document"),
+        invoke<VaultDocument>("get_vault_document"),
+        invoke<AppSettings>("get_app_settings")
+      ]);
       setDocument(nextDocument);
+      setVault(nextVault);
+      setSettings(withSettingsDefaults(nextSettings));
       setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
       setSelectedHostId((current) =>
         current && nextDocument.hosts[current] ? current : firstHostId(nextDocument.tree, nextDocument.hosts)
@@ -119,7 +131,11 @@ function App() {
 
   const deleteHost = useCallback(
     async (hostId: string) => {
+      const passwordRef = document?.hosts[hostId]?.auth.type === "password" ? document.hosts[hostId].auth.passwordRef : null;
       const nextDocument = await invoke<HostDocument>("delete_host", { hostId });
+      if (passwordRef) {
+        setVault(await invoke<VaultDocument>("delete_password", { passwordRef }));
+      }
       setDocument(nextDocument);
       setSessions((current) => {
         const nextSessions = current.filter((session) => session.hostId !== hostId);
@@ -134,29 +150,74 @@ function App() {
         current === hostId ? firstHostId(nextDocument.tree, nextDocument.hosts) : current
       );
     },
-    []
+    [document]
   );
 
-  const createHost = useCallback(async (host: Host) => {
-    const nextDocument = await invoke<HostDocument>("create_host", { parentId: null, host });
+  const createHost = useCallback(async (host: Host, parentFolderId: string | null = null) => {
+    const nextDocument = await invoke<HostDocument>("create_host", { parentId: parentFolderId, host });
     setDocument(nextDocument);
+    if (parentFolderId) {
+      setExpandedNodeIds((current) => new Set(current).add(parentFolderId));
+    }
     setSelectedHostId(host.id);
   }, []);
 
   const saveHostFromEditor = useCallback(
     async (host: Host) => {
       if (hostEditor?.mode === "create") {
-        await createHost(host);
+        await createHost(host, hostEditor.parentFolderId ?? null);
       } else {
         await saveHost(host);
       }
     },
-    [createHost, hostEditor?.mode, saveHost]
+    [createHost, hostEditor, saveHost]
   );
 
-  const createFolder = useCallback(async (name: string) => {
-    const nextDocument = await invoke<HostDocument>("create_folder", { parentId: null, name });
+  const createFolder = useCallback(async (name: string, parentFolderId: string | null = null) => {
+    const nextDocument = await invoke<HostDocument>("create_folder", { parentId: parentFolderId, name });
     setDocument(nextDocument);
+    if (parentFolderId) {
+      setExpandedNodeIds((current) => new Set(current).add(parentFolderId));
+      return;
+    }
+
+    setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
+  }, []);
+
+  const savePassword = useCallback(async (passwordRef: string, username: string, password: string) => {
+    const nextVault = await invoke<VaultDocument>("save_password", { passwordRef, username, password });
+    setVault(nextVault);
+  }, []);
+
+  const deletePassword = useCallback(async (passwordRef: string) => {
+    const nextVault = await invoke<VaultDocument>("delete_password", { passwordRef });
+    setVault(nextVault);
+  }, []);
+
+  const saveSettings = useCallback(async (nextSettings: AppSettings) => {
+    const saved = await invoke<AppSettings>("save_app_settings", { settings: nextSettings });
+    setSettings(withSettingsDefaults(saved));
+  }, []);
+
+  const importSshConfig = useCallback(async () => {
+    const nextDocument = await invoke<HostDocument>("import_ssh_config_from_default");
+    setDocument(nextDocument);
+    setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
+  }, []);
+
+  const exportConfig = useCallback(async () => {
+    await invoke<string>("export_config_bundle");
+  }, []);
+
+  const importConfig = useCallback(async () => {
+    const nextDocument = await invoke<HostDocument>("import_config_bundle");
+    const [nextVault, nextSettings] = await Promise.all([
+      invoke<VaultDocument>("get_vault_document"),
+      invoke<AppSettings>("get_app_settings")
+    ]);
+    setDocument(nextDocument);
+    setVault(nextVault);
+    setSettings(withSettingsDefaults(nextSettings));
     setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
   }, []);
 
@@ -169,7 +230,12 @@ function App() {
     async (folderId: string) => {
       const folder = findFolderById(document?.tree ?? [], folderId);
       const deletedHostIds = new Set(folder ? collectHostIds(folder.children) : []);
+      const deletedPasswordRefs = Array.from(deletedHostIds)
+        .map((hostId) => document?.hosts[hostId])
+        .map((host) => (host?.auth.type === "password" ? host.auth.passwordRef : null))
+        .filter((passwordRef): passwordRef is string => Boolean(passwordRef));
       const nextDocument = await invoke<HostDocument>("delete_folder", { folderId });
+      await Promise.all(deletedPasswordRefs.map((passwordRef) => deletePassword(passwordRef)));
 
       setDocument(nextDocument);
       setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
@@ -185,6 +251,56 @@ function App() {
       setSelectedHostId((current) =>
         current && deletedHostIds.has(current) ? firstHostId(nextDocument.tree, nextDocument.hosts) : current
       );
+    },
+    [deletePassword, document]
+  );
+
+  const duplicateHost = useCallback(
+    async (hostId: string) => {
+      if (!document) {
+        return;
+      }
+
+      const host = document.hosts[hostId];
+      if (!host) {
+        return;
+      }
+
+      const parentFolderId = findParentFolderId(document.tree, { type: "host", nodeId: `node-${hostId}`, hostId });
+      const duplicate = createDuplicateHost(host, document.hosts);
+      await createHost(duplicate, parentFolderId);
+      if (host.auth.type === "password" && duplicate.auth.type === "password" && host.auth.passwordRef) {
+        const savedPassword = vault?.items[host.auth.passwordRef];
+        if (savedPassword && duplicate.auth.passwordRef) {
+          await savePassword(duplicate.auth.passwordRef, savedPassword.username, savedPassword.password);
+        }
+      }
+    },
+    [createHost, document, savePassword, vault]
+  );
+
+  const moveNode = useCallback(
+    async (source: TreeDragSource, targetFolderId: string | null) => {
+      if (!document) {
+        return;
+      }
+
+      const moved = moveTreeNode(document.tree, source, targetFolderId);
+      if (!moved) {
+        return;
+      }
+
+      const nextDocument = await invoke<HostDocument>("save_host_document", {
+        document: {
+          ...document,
+          tree: moved
+        }
+      });
+
+      setDocument(nextDocument);
+      if (targetFolderId) {
+        setExpandedNodeIds((current) => new Set(current).add(targetFolderId));
+      }
     },
     [document]
   );
@@ -206,7 +322,7 @@ function App() {
   }, []);
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" style={{ "--terminal-blur": `${settings.terminal.backgroundBlur}px` } as CSSProperties}>
       <aside className="sidebar">
         <header className="sidebar-header">
           <div>
@@ -217,7 +333,9 @@ function App() {
             <button
               className="icon-button"
               type="button"
-              onClick={() => setHostEditor({ mode: "create", host: createDefaultHost(document?.hosts ?? {}) })}
+              onClick={() =>
+                setHostEditor({ mode: "create", host: createDefaultHost(document?.hosts ?? {}), parentFolderId: null })
+              }
               title="New host"
             >
               <span className="new-host-icon" aria-hidden="true" />
@@ -225,13 +343,16 @@ function App() {
             <button
               className="icon-button"
               type="button"
-              onClick={() => setFolderEditor({ mode: "create" })}
+              onClick={() => setFolderEditor({ mode: "create", parentFolderId: null })}
               title="New folder"
             >
               <span className="new-folder-icon" aria-hidden="true" />
             </button>
             <button className="icon-button" type="button" onClick={loadDocument} title="Reload hosts">
               <span className="reload-icon" aria-hidden="true" />
+            </button>
+            <button className="icon-button" type="button" onClick={() => setIsSettingsOpen(true)} title="Settings">
+              <span className="settings-icon" aria-hidden="true" />
             </button>
           </div>
         </header>
@@ -265,19 +386,28 @@ function App() {
             hosts={document?.hosts ?? {}}
             expandedNodeIds={visibleExpandedNodeIds}
             selectedHostId={selectedHostId}
+            searchQuery={searchQuery}
             onToggleFolder={toggleFolder}
             onSelectHost={(hostId) => setSelectedHostId(hostId)}
             onOpenHost={openHost}
+            onCreateHost={(parentFolderId) =>
+              setHostEditor({ mode: "create", host: createDefaultHost(document?.hosts ?? {}), parentFolderId })
+            }
+            onCreateFolder={(parentFolderId) => setFolderEditor({ mode: "create", parentFolderId })}
             onEditFolder={(folder) => {
               const sourceFolder = findFolderById(document?.tree ?? [], folder.id) ?? folder;
               setFolderEditor({ mode: "edit", folder: sourceFolder });
             }}
+            onDeleteFolder={deleteFolder}
             onEditHost={(hostId) => {
               const host = document?.hosts[hostId];
               if (host) {
                 setHostEditor({ mode: "edit", host });
               }
             }}
+            onDuplicateHost={duplicateHost}
+            onDeleteHost={deleteHost}
+            onMoveNode={moveNode}
           />
         )}
       </aside>
@@ -287,6 +417,7 @@ function App() {
           sessions={sessions}
           activeSessionId={activeSessionId}
           selectedHost={selectedHost}
+          settings={settings}
           onCloseSession={closeSession}
           onSelectSession={(sessionId) => setActiveSessionId(sessionId)}
         />
@@ -297,9 +428,12 @@ function App() {
           host={hostEditor.host}
           hosts={document?.hosts ?? {}}
           mode={hostEditor.mode}
+          passwordValue={hostEditor.host.auth.type === "password" && hostEditor.host.auth.passwordRef ? vault?.items[hostEditor.host.auth.passwordRef]?.password ?? "" : ""}
           onClose={() => setHostEditor(null)}
           onDelete={hostEditor.mode === "edit" ? deleteHost : undefined}
+          onDeletePassword={deletePassword}
           onSave={saveHostFromEditor}
+          onSavePassword={savePassword}
         />
       ) : null}
 
@@ -308,9 +442,20 @@ function App() {
           folder={folderEditor.mode === "edit" ? folderEditor.folder : undefined}
           mode={folderEditor.mode}
           onClose={() => setFolderEditor(null)}
-          onCreate={createFolder}
+          onCreate={(name) => createFolder(name, folderEditor.mode === "create" ? folderEditor.parentFolderId ?? null : null)}
           onDelete={folderEditor.mode === "edit" ? deleteFolder : undefined}
           onRename={folderEditor.mode === "edit" ? renameFolder : undefined}
+        />
+      ) : null}
+
+      {isSettingsOpen ? (
+        <SettingsModal
+          settings={settings}
+          onClose={() => setIsSettingsOpen(false)}
+          onExportConfig={exportConfig}
+          onImportConfig={importConfig}
+          onImportSshConfig={importSshConfig}
+          onSave={saveSettings}
         />
       ) : null}
     </main>
@@ -376,6 +521,116 @@ const collectHostIds = (tree: TreeNode[]): string[] => {
   }
 
   return hostIds;
+};
+
+const findParentFolderId = (tree: TreeNode[], source: TreeDragSource, parentId: string | null = null): string | null => {
+  for (const node of tree) {
+    if (matchesDragSource(node, source)) {
+      return parentId;
+    }
+
+    if (node.type === "folder") {
+      const nestedParentId = findParentFolderId(node.children, source, node.id);
+      if (nestedParentId !== null) {
+        return nestedParentId;
+      }
+    }
+  }
+
+  return null;
+};
+
+const moveTreeNode = (tree: TreeNode[], source: TreeDragSource, targetFolderId: string | null): TreeNode[] | null => {
+  if (source.type === "folder" && source.nodeId === targetFolderId) {
+    return null;
+  }
+
+  const removal = removeTreeNode(tree, source);
+  if (!removal.removed) {
+    return null;
+  }
+
+  if (targetFolderId && nodeContainsFolder(removal.removed, targetFolderId)) {
+    return null;
+  }
+
+  if (!targetFolderId) {
+    return [...removal.tree, removal.removed];
+  }
+
+  const insertedTree = insertTreeNode(removal.tree, targetFolderId, removal.removed);
+  return insertedTree.inserted ? insertedTree.tree : null;
+};
+
+const removeTreeNode = (
+  tree: TreeNode[],
+  source: TreeDragSource
+): { tree: TreeNode[]; removed: TreeNode | null } => {
+  const nextTree: TreeNode[] = [];
+
+  for (const node of tree) {
+    if (matchesDragSource(node, source)) {
+      return { tree: [...nextTree, ...tree.slice(nextTree.length + 1)], removed: node };
+    }
+
+    if (node.type === "folder") {
+      const nested = removeTreeNode(node.children, source);
+      if (nested.removed) {
+        return {
+          tree: [...nextTree, { ...node, children: nested.tree }, ...tree.slice(nextTree.length + 1)],
+          removed: nested.removed
+        };
+      }
+    }
+
+    nextTree.push(node);
+  }
+
+  return { tree, removed: null };
+};
+
+const insertTreeNode = (
+  tree: TreeNode[],
+  targetFolderId: string,
+  movedNode: TreeNode
+): { tree: TreeNode[]; inserted: boolean } => {
+  let inserted = false;
+  const nextTree = tree.map((node) => {
+    if (node.type === "hostRef") {
+      return node;
+    }
+
+    if (node.id === targetFolderId) {
+      inserted = true;
+      return { ...node, expanded: true, children: [...node.children, movedNode] };
+    }
+
+    const nested = insertTreeNode(node.children, targetFolderId, movedNode);
+    if (nested.inserted) {
+      inserted = true;
+      return { ...node, children: nested.tree };
+    }
+
+    return node;
+  });
+
+  return { tree: nextTree, inserted };
+};
+
+const matchesDragSource = (node: TreeNode, source: TreeDragSource): boolean => {
+  if (source.type === "folder") {
+    return node.type === "folder" && node.id === source.nodeId;
+  }
+
+  return node.type === "hostRef" && (node.id === source.nodeId || node.hostId === source.hostId);
+};
+
+const nodeContainsFolder = (node: TreeNode, folderId: string): boolean => {
+  if (node.type === "hostRef") {
+    return false;
+  }
+
+  return node.id === folderId || node.children.some((child) => nodeContainsFolder(child, folderId));
 };
 
 const filterTree = (tree: TreeNode[], hosts: Record<string, Host>, query: string): TreeNode[] => {
@@ -481,6 +736,23 @@ const createDefaultHost = (hosts: Record<string, Host>): Host => {
   };
 };
 
+const createDuplicateHost = (host: Host, hosts: Record<string, Host>): Host => {
+  const id = nextDuplicateHostId(host.id, hosts);
+
+  return {
+    ...host,
+    id,
+    alias: nextDuplicateAlias(host.alias, hosts),
+    auth:
+      host.auth.type === "password"
+        ? { ...host.auth, passwordRef: host.auth.passwordRef ? `password:${id}` : null }
+        : host.auth,
+    createdAt: null,
+    updatedAt: null,
+    lastConnectedAt: null
+  };
+};
+
 const nextHostId = (hosts: Record<string, Host>): string => {
   const base = "new-host";
   let index = 1;
@@ -493,6 +765,70 @@ const nextHostId = (hosts: Record<string, Host>): string => {
 
   return candidate;
 };
+
+const nextDuplicateHostId = (sourceId: string, hosts: Record<string, Host>): string => {
+  const base = `${sourceId}-copy`;
+  let index = 1;
+  let candidate = base;
+
+  while (hosts[candidate]) {
+    index += 1;
+    candidate = `${base}-${index}`;
+  }
+
+  return candidate;
+};
+
+const nextDuplicateAlias = (sourceAlias: string, hosts: Record<string, Host>): string => {
+  const aliases = new Set(Object.values(hosts).map((host) => host.alias));
+  const base = `${sourceAlias} copy`;
+  let index = 1;
+  let candidate = base;
+
+  while (aliases.has(candidate)) {
+    index += 1;
+    candidate = `${base} ${index}`;
+  }
+
+  return candidate;
+};
+
+const defaultSettings: AppSettings = {
+  version: 1,
+  theme: "dark",
+  terminal: {
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: 13,
+    cursorStyle: "block",
+    backgroundBlur: 0
+  },
+  vault: {
+    mode: "plain",
+    clearClipboardAfterSeconds: 30
+  },
+  connection: {
+    defaultOpenMode: "tab",
+    autoLogin: true,
+    closeTabOnDisconnect: false
+  }
+};
+
+const withSettingsDefaults = (settings: AppSettings): AppSettings => ({
+  ...defaultSettings,
+  ...settings,
+  terminal: {
+    ...defaultSettings.terminal,
+    ...settings.terminal
+  },
+  vault: {
+    ...defaultSettings.vault,
+    ...settings.vault
+  },
+  connection: {
+    ...defaultSettings.connection,
+    ...settings.connection
+  }
+});
 
 const errorMessage = (caught: unknown): string => {
   if (caught instanceof Error) {

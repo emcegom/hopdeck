@@ -4,12 +4,20 @@ import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 
-import { displayHost, type Host, type TerminalExitEvent, type TerminalOutputEvent, type TerminalSession } from "../types/hopdeck";
+import {
+  displayHost,
+  type AppSettings,
+  type Host,
+  type TerminalExitEvent,
+  type TerminalOutputEvent,
+  type TerminalSession
+} from "../types/hopdeck";
 
 interface TerminalWorkspaceProps {
   sessions: TerminalSession[];
   activeSessionId: string | null;
   selectedHost: Host | null;
+  settings: AppSettings;
   onCloseSession: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
 }
@@ -18,6 +26,7 @@ export function TerminalWorkspace({
   sessions,
   activeSessionId,
   selectedHost,
+  settings,
   onCloseSession,
   onSelectSession
 }: TerminalWorkspaceProps) {
@@ -60,6 +69,7 @@ export function TerminalWorkspace({
             <TerminalPane
               isActive={session.id === activeSession.id}
               key={session.id}
+              settings={settings}
               session={session}
             />
           ))
@@ -77,9 +87,10 @@ export function TerminalWorkspace({
 interface TerminalPaneProps {
   session: TerminalSession;
   isActive: boolean;
+  settings: AppSettings;
 }
 
-function TerminalPane({ session, isActive }: TerminalPaneProps) {
+function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -94,8 +105,8 @@ function TerminalPane({ session, isActive }: TerminalPaneProps) {
     const terminal = new Terminal({
       cursorBlink: true,
       convertEol: true,
-      fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-      fontSize: 13,
+      fontFamily: settings.terminal.fontFamily,
+      fontSize: settings.terminal.fontSize,
       theme: {
         background: "#0f1720",
         foreground: "#dbe7f3",
@@ -175,7 +186,7 @@ function TerminalPane({ session, isActive }: TerminalPaneProps) {
       fitAddonRef.current = null;
       void invoke("close_terminal_session", { sessionId: session.id });
     };
-  }, [session]);
+  }, [session, settings.terminal.fontFamily, settings.terminal.fontSize]);
 
   useEffect(() => {
     if (!isActive) {

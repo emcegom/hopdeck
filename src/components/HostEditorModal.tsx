@@ -7,9 +7,12 @@ interface HostEditorModalProps {
   host: Host;
   hosts: Record<string, Host>;
   mode?: "create" | "edit";
+  passwordValue?: string;
   onClose: () => void;
   onDelete?: (hostId: string) => Promise<void>;
+  onDeletePassword?: (passwordRef: string) => Promise<void>;
   onSave: (host: Host) => Promise<void>;
+  onSavePassword?: (passwordRef: string, username: string, password: string) => Promise<void>;
 }
 
 interface HostDraft {
@@ -22,6 +25,8 @@ interface HostDraft {
   favorite: boolean;
   isJumpHost: boolean;
   authType: HostAuth["type"];
+  autoLogin: boolean;
+  password: string;
   notes: string;
 }
 
@@ -29,20 +34,23 @@ export function HostEditorModal({
   host,
   hosts,
   mode = "edit",
+  passwordValue = "",
   onClose,
   onDelete,
-  onSave
+  onDeletePassword,
+  onSave,
+  onSavePassword
 }: HostEditorModalProps) {
-  const [draft, setDraft] = useState<HostDraft>(() => toDraft(host));
+  const [draft, setDraft] = useState<HostDraft>(() => toDraft(host, passwordValue));
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setDraft(toDraft(host));
+    setDraft(toDraft(host, passwordValue));
     setError(null);
-  }, [host]);
+  }, [host, passwordValue]);
 
   const jumpCandidates = useMemo(
     () => Object.values(hosts).filter((candidate) => candidate.id !== host.id),
@@ -79,7 +87,9 @@ export function HostEditorModal({
     setError(null);
 
     try {
-      await onSave({
+      const passwordRef = `password:${host.id}`;
+      const nextAuth = normalizeAuth(host.auth, draft.authType, passwordRef, draft.autoLogin);
+      const nextHost = {
         ...host,
         alias: draft.alias.trim(),
         host: draft.host.trim(),
@@ -92,9 +102,19 @@ export function HostEditorModal({
         jumpChain: draft.jumpChain,
         favorite: draft.favorite,
         isJumpHost: draft.isJumpHost,
-        auth: normalizeAuth(host.auth, draft.authType),
+        auth: nextAuth,
         notes: draft.notes
-      });
+      };
+
+      if (draft.authType === "password" && draft.password && onSavePassword) {
+        await onSavePassword(passwordRef, draft.user.trim(), draft.password);
+      }
+
+      if (draft.authType !== "password" && host.auth.type === "password" && host.auth.passwordRef && onDeletePassword) {
+        await onDeletePassword(host.auth.passwordRef);
+      }
+
+      await onSave(nextHost);
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -178,6 +198,37 @@ export function HostEditorModal({
           </Field>
         </div>
 
+        {draft.authType === "password" ? (
+          <div className="credential-panel">
+            <Field label="Saved password">
+              <div className="password-field">
+                <input
+                  type="password"
+                  value={draft.password}
+                  onChange={(event) => updateDraft("password", event.target.value)}
+                  placeholder="Stored in ~/.hopdeck/vault.json"
+                />
+                <button
+                  className="secondary-action compact"
+                  type="button"
+                  disabled={!draft.password}
+                  onClick={() => void navigator.clipboard.writeText(draft.password)}
+                >
+                  Copy
+                </button>
+              </div>
+            </Field>
+            <label className="toggle-row">
+              <input
+                checked={draft.autoLogin}
+                type="checkbox"
+                onChange={(event) => updateDraft("autoLogin", event.target.checked)}
+              />
+              Auto-login when SSH asks for this password
+            </label>
+          </div>
+        ) : null}
+
         <label className="toggle-row">
           <input
             checked={draft.favorite}
@@ -257,7 +308,7 @@ function Field({ label, children }: FieldProps) {
   );
 }
 
-const toDraft = (host: Host): HostDraft => ({
+const toDraft = (host: Host, password: string): HostDraft => ({
   alias: host.alias,
   host: host.host,
   user: host.user,
@@ -267,17 +318,24 @@ const toDraft = (host: Host): HostDraft => ({
   favorite: host.favorite,
   isJumpHost: host.isJumpHost,
   authType: host.auth.type,
+  autoLogin: host.auth.type === "password" ? host.auth.autoLogin : false,
+  password,
   notes: host.notes
 });
 
-const normalizeAuth = (current: HostAuth, type: HostAuth["type"]): HostAuth => {
-  if (current.type === type) {
+const normalizeAuth = (
+  current: HostAuth,
+  type: HostAuth["type"],
+  passwordRef: string,
+  autoLogin: boolean
+): HostAuth => {
+  if (current.type === type && type !== "password") {
     return current;
   }
 
   switch (type) {
     case "password":
-      return { type: "password", passwordRef: null, autoLogin: false };
+      return { type: "password", passwordRef, autoLogin };
     case "key":
       return { type: "key", identityFile: null, useAgent: true };
     case "agent":

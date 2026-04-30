@@ -26,6 +26,8 @@ pub struct TerminalSettings {
     pub font_family: String,
     pub font_size: u16,
     pub cursor_style: String,
+    #[serde(default)]
+    pub background_blur: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,6 +54,7 @@ impl Default for AppSettings {
                 font_family: "JetBrains Mono".to_string(),
                 font_size: 13,
                 cursor_style: "block".to_string(),
+                background_blur: 0,
             },
             vault: VaultSettings {
                 mode: "plain".to_string(),
