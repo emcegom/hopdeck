@@ -12,6 +12,7 @@ struct RootView: View {
     @State private var isAddingHost = false
     @State private var isShowingSettings = false
     @State private var revealState: PasswordRevealState?
+    @State private var connectingHostID: SSHHost.ID?
 
     private let hostStore = HostStore()
     private let vault = PasswordVault()
@@ -60,6 +61,7 @@ struct RootView: View {
                 HostDetailView(
                     host: selectedHost,
                     sshCommand: (try? SSHCommandBuilder().buildCommand(for: selectedHost, allHosts: hosts).command) ?? "",
+                    isConnecting: connectingHostID == selectedHost.id,
                     onConnect: { connect(to: selectedHost) },
                     onEdit: { editingHost = selectedHost },
                     onDelete: { delete(selectedHost) },
@@ -153,26 +155,57 @@ struct RootView: View {
     }
 
     private func connect(to host: SSHHost) {
-        do {
-            let builder = SSHCommandBuilder()
-            let resolved = try builder.buildCommand(for: host, allHosts: hosts)
-            let command = try commandForLaunch(host: host, resolved: resolved)
-            try TerminalLauncher(
-                backend: settings.defaultTerminal,
-                customTemplate: settings.customTerminalTemplate
-            ).run(command: command)
-            markConnected(host)
-        } catch {
-            launchError = error.localizedDescription
+        guard connectingHostID == nil else {
+            return
+        }
+
+        connectingHostID = host.id
+
+        let hostsSnapshot = hosts
+        let settingsSnapshot = settings
+        let vaultSnapshot = vault
+
+        Task.detached(priority: .userInitiated) {
+            do {
+                let resolved = try SSHCommandBuilder().buildCommand(for: host, allHosts: hostsSnapshot)
+                let command = try Self.commandForLaunch(
+                    host: host,
+                    resolved: resolved,
+                    hosts: hostsSnapshot,
+                    settings: settingsSnapshot,
+                    vault: vaultSnapshot
+                )
+
+                try TerminalLauncher(
+                    backend: settingsSnapshot.defaultTerminal,
+                    customTemplate: settingsSnapshot.customTerminalTemplate
+                ).run(command: command)
+
+                await MainActor.run {
+                    markConnected(host)
+                    connectingHostID = nil
+                }
+            } catch {
+                await MainActor.run {
+                    launchError = error.localizedDescription
+                    connectingHostID = nil
+                }
+            }
         }
     }
 
-    private func commandForLaunch(host: SSHHost, resolved: ResolvedSSHCommand) throws -> String {
+    nonisolated private static func commandForLaunch(
+        host: SSHHost,
+        resolved: ResolvedSSHCommand,
+        hosts: [SSHHost],
+        settings: AppSettings,
+        vault: PasswordVault
+    ) throws -> String {
         guard settings.autoLoginEnabled, host.auth.autoLogin else {
             return resolved.command
         }
 
-        let credentials = try credentialsForAutoLogin(host: host)
+        let credentials = try credentialsForAutoLogin(host: host, hosts: hosts, vault: vault)
         guard !credentials.isEmpty else {
             return resolved.command
         }
@@ -180,7 +213,7 @@ struct RootView: View {
         return try AutoLoginRunner().makeCommand(sshCommand: resolved.command, credentials: credentials)
     }
 
-    private func credentialsForAutoLogin(host: SSHHost) throws -> [AutoLoginCredentials] {
+    nonisolated private static func credentialsForAutoLogin(host: SSHHost, hosts: [SSHHost], vault: PasswordVault) throws -> [AutoLoginCredentials] {
         var credentials: [AutoLoginCredentials] = []
 
         for jumpAlias in host.jumpChain {

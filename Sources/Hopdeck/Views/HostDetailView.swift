@@ -3,6 +3,7 @@ import SwiftUI
 struct HostDetailView: View {
     let host: SSHHost
     let sshCommand: String
+    let isConnecting: Bool
     let onConnect: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -65,9 +66,10 @@ struct HostDetailView: View {
     private var actionsSection: some View {
         DetailSection(title: "Actions") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 10)], alignment: .leading, spacing: 10) {
-                Button("Connect", action: onConnect)
+                Button(isConnecting ? "Connecting..." : "Connect", action: onConnect)
                     .buttonStyle(.borderedProminent)
                     .frame(maxWidth: .infinity)
+                    .disabled(isConnecting)
 
                 Button("Edit", action: onEdit)
                     .frame(maxWidth: .infinity)
