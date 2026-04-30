@@ -285,16 +285,24 @@ code {
 .tree-row {
   --tree-depth: 0;
   display: grid;
-  grid-template-columns: 18px 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px 18px minmax(0, 1fr) auto 24px;
   align-items: center;
   gap: 8px;
   width: 100%;
   min-height: 33px;
+  border: 0;
   padding: 6px 8px 6px calc(8px + var(--tree-depth) * 17px);
   border-radius: 8px;
   color: var(--text);
   text-align: left;
   background: transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tree-row:focus-visible {
+  outline: 2px solid rgba(65, 182, 200, 0.62);
+  outline-offset: 1px;
 }
 
 .tree-row:hover {
@@ -420,6 +428,28 @@ code {
   background: #e5c15d;
 }
 
+.tree-row-menu {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted-strong);
+  font: 800 13px/1 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.64;
+}
+
+.tree-row:hover .tree-row-menu,
+.tree-row:focus-within .tree-row-menu,
+.tree-row-menu:hover {
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 1;
+}
+
 .tree-empty {
   display: grid;
   gap: 4px;
@@ -474,11 +504,33 @@ code {
 }
 
 .workspace {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 100vh;
-  background: var(--bg);
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(65, 182, 200, 0.16), transparent 32%),
+    linear-gradient(225deg, rgba(229, 193, 93, 0.1), transparent 34%),
+    linear-gradient(180deg, #0f1720, #0b131c);
+}
+
+.workspace::before {
+  position: absolute;
+  inset: -26px;
+  background:
+    repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.045) 0 1px, transparent 1px 42px),
+    linear-gradient(90deg, rgba(65, 182, 200, 0.1), rgba(126, 99, 210, 0.08), transparent);
+  content: "";
+  filter: blur(var(--terminal-blur, 0));
+  opacity: 0.44;
+  transform: scale(1.03);
+}
+
+.workspace > * {
+  position: relative;
+  z-index: 1;
 }
 
 .detail-pane {
@@ -638,9 +690,7 @@ code {
   min-height: 0;
   border-top: 0;
   color: var(--text);
-  background:
-    linear-gradient(180deg, rgba(65, 182, 200, 0.08), transparent 190px),
-    var(--bg);
+  background: rgba(8, 14, 21, 0.42);
 }
 
 .terminal-tabs {
@@ -739,7 +789,7 @@ code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   line-height: 1.7;
-  background: rgba(12, 21, 31, 0.88);
+  background: rgba(12, 21, 31, 0.62);
   backdrop-filter: blur(var(--terminal-blur, 0));
 }
 

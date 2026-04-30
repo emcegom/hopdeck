@@ -73,6 +73,7 @@ export function TreeNavigator({
 
   const showFolderMenu = (event: MouseEvent<HTMLElement>, folder: FolderNode) => {
     event.preventDefault();
+    event.stopPropagation();
     setMenu({
       x: event.clientX,
       y: event.clientY,
@@ -87,6 +88,7 @@ export function TreeNavigator({
 
   const showHostMenu = (event: MouseEvent<HTMLElement>, hostId: string) => {
     event.preventDefault();
+    event.stopPropagation();
     onSelectHost(hostId);
     setMenu({
       x: event.clientX,
@@ -165,7 +167,7 @@ function TreeRow({
 }: TreeRowProps) {
   if (node.type === "folder") {
     const isExpanded = expandedNodeIds.has(node.id);
-    const moveToFolder = (event: DragEvent<HTMLButtonElement>) => {
+    const moveToFolder = (event: DragEvent<HTMLDivElement>) => {
       event.stopPropagation();
       const source = readDragSource(event);
       if (!source) {
@@ -178,14 +180,21 @@ function TreeRow({
 
     return (
       <div className="tree-group">
-        <button
+        <div
           className="tree-row tree-folder"
           style={{ "--tree-depth": depth } as CSSProperties}
-          type="button"
+          role="button"
+          tabIndex={0}
           aria-expanded={isExpanded}
           draggable
           title={isExpanded ? "Collapse folder" : "Expand folder"}
           onClick={() => onToggleFolder(node.id)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onToggleFolder(node.id);
+            }
+          }}
           onContextMenu={(event) => onShowFolderMenu(event, node)}
           onDragStart={(event) => writeDragSource(event, { type: "folder", nodeId: node.id })}
           onDragOver={allowTreeDrop}
@@ -195,7 +204,15 @@ function TreeRow({
           <span className="tree-folder-icon" aria-hidden="true" />
           <span className="tree-label">{highlightMatch(node.name, normalizedSearchQuery)}</span>
           <span className="tree-count">{node.children.length}</span>
-        </button>
+          <button
+            className="tree-row-menu"
+            type="button"
+            title="Folder actions"
+            onClick={(event) => onShowFolderMenu(event, node)}
+          >
+            ...
+          </button>
+        </div>
         {isExpanded ? (
           <div className="tree-children">
             {node.children.map((child) => (
@@ -226,14 +243,21 @@ function TreeRow({
   const label = host?.alias ?? node.hostId;
 
   return (
-    <button
+    <div
       className={`tree-row tree-host${isSelected ? " is-selected" : ""}${host?.favorite ? " is-favorite" : ""}`}
       style={{ "--tree-depth": depth } as CSSProperties}
-      type="button"
+      role="button"
+      tabIndex={0}
       draggable={Boolean(host)}
       title={host ? "Open host" : "Missing host reference"}
       onClick={() => onSelectHost(node.hostId)}
       onDoubleClick={() => onOpenHost(node.hostId)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onOpenHost(node.hostId);
+        }
+      }}
       onContextMenu={(event) => {
         if (host) {
           onShowHostMenu(event, node.hostId);
@@ -248,7 +272,19 @@ function TreeRow({
         {host ? <SearchSnippet host={host} query={normalizedSearchQuery} fallback={label} /> : null}
       </span>
       {host?.favorite ? <span className="tree-favorite" aria-label="Favorite" /> : null}
-    </button>
+      {host ? (
+        <button
+          className="tree-row-menu"
+          type="button"
+          title="Host actions"
+          onClick={(event) => onShowHostMenu(event, node.hostId)}
+        >
+          ...
+        </button>
+      ) : (
+        <span />
+      )}
+    </div>
   );
 }
 
