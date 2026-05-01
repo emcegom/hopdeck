@@ -9,6 +9,85 @@ The product goal is straightforward: keep SSH inventory, jump chains, and
 terminal sessions in one focused desktop app while leaving connection execution
 to the system `ssh` client.
 
+## Quick Install
+
+Hopdeck currently ships a macOS Apple Silicon build:
+
+```text
+Hopdeck_0.1.0_aarch64.app.zip
+```
+
+Install from the GitHub release:
+
+```zsh
+curl -L \
+  -o ~/Downloads/Hopdeck_0.1.0_aarch64.app.zip \
+  https://github.com/emcegom/hopdeck/releases/download/v0.1.0/Hopdeck_0.1.0_aarch64.app.zip
+
+ditto -x -k ~/Downloads/Hopdeck_0.1.0_aarch64.app.zip ~/Downloads/
+mv ~/Downloads/Hopdeck.app /Applications/Hopdeck.app
+open /Applications/Hopdeck.app
+```
+
+If macOS blocks the first launch because the app is not notarized yet, use:
+
+```zsh
+xattr -dr com.apple.quarantine /Applications/Hopdeck.app
+open /Applications/Hopdeck.app
+```
+
+You can also install manually by downloading the zip from the release page,
+unarchiving it, and dragging `Hopdeck.app` into `/Applications`.
+
+## Uninstall
+
+Quit Hopdeck first, then remove the app bundle:
+
+```zsh
+osascript -e 'quit app "Hopdeck"'
+rm -rf /Applications/Hopdeck.app
+```
+
+Hopdeck stores user data locally under `~/.hopdeck/`. Remove this directory only
+if you want to delete hosts, saved passwords, settings, and imported theme data:
+
+```zsh
+rm -rf ~/.hopdeck
+```
+
+Optional cleanup for macOS/Tauri runtime state:
+
+```zsh
+rm -rf ~/Library/Application\ Support/com.emcegom.hopdeck
+rm -rf ~/Library/Caches/com.emcegom.hopdeck
+rm -rf ~/Library/WebKit/com.emcegom.hopdeck
+rm -rf ~/Library/Saved\ Application\ State/com.emcegom.hopdeck.savedState
+rm -f ~/Library/Preferences/com.emcegom.hopdeck.plist
+```
+
+The important directory is `~/.hopdeck`; the `~/Library/...` paths only contain
+app runtime preferences, caches, WebView data, and saved window state.
+
+## Local Data
+
+Hopdeck is local-first. The app data directory is:
+
+```text
+~/.hopdeck/
+```
+
+Current files:
+
+```text
+~/.hopdeck/
+  hosts.json      # host tree, host records, jump chains
+  vault.json      # plain saved password vault
+  settings.json   # UI, terminal, blur, iTerm2-imported theme settings
+```
+
+Back up this directory before deleting or reinstalling if you want to keep your
+connections and saved credentials.
+
 ## Product Positioning
 
 Hopdeck is for operators and developers who maintain many SSH targets and need
@@ -211,7 +290,17 @@ This runs the configured Tauri build. The app bundle is produced under the
 Tauri target output directory, for example:
 
 ```text
-src-tauri/target/release/bundle/macos/
+src-tauri/target/release/bundle/macos/Hopdeck.app
+```
+
+Create a zip suitable for GitHub Release uploads:
+
+```zsh
+mkdir -p release
+ditto -c -k --sequesterRsrc --keepParent \
+  src-tauri/target/release/bundle/macos/Hopdeck.app \
+  release/Hopdeck_0.1.0_aarch64.app.zip
+shasum -a 256 release/Hopdeck_0.1.0_aarch64.app.zip
 ```
 
 ## Troubleshooting
