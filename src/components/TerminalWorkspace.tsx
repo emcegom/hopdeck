@@ -103,12 +103,13 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
     }
 
     const terminal = new Terminal({
+      allowTransparency: true,
       cursorBlink: true,
       convertEol: true,
       fontFamily: settings.terminal.fontFamily,
       fontSize: settings.terminal.fontSize,
       theme: {
-        background: "#0f1720",
+        background: "rgba(15, 23, 32, 0)",
         foreground: "#dbe7f3",
         cursor: "#41b6c8",
         selectionBackground: "#24384a"

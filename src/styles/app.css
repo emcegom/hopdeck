@@ -511,8 +511,9 @@ code {
   min-height: 100vh;
   overflow: hidden;
   background:
-    linear-gradient(135deg, rgba(65, 182, 200, 0.16), transparent 32%),
-    linear-gradient(225deg, rgba(229, 193, 93, 0.1), transparent 34%),
+    radial-gradient(circle at 18% 18%, rgba(65, 182, 200, 0.26), transparent 16%),
+    radial-gradient(circle at 72% 34%, rgba(126, 99, 210, 0.22), transparent 18%),
+    radial-gradient(circle at 88% 76%, rgba(229, 193, 93, 0.12), transparent 20%),
     linear-gradient(180deg, #0f1720, #0b131c);
 }
 
@@ -520,12 +521,14 @@ code {
   position: absolute;
   inset: -26px;
   background:
-    repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.045) 0 1px, transparent 1px 42px),
-    linear-gradient(90deg, rgba(65, 182, 200, 0.1), rgba(126, 99, 210, 0.08), transparent);
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 2px, transparent 2px 34px),
+    repeating-linear-gradient(135deg, rgba(65, 182, 200, 0.1) 0 1px, transparent 1px 56px),
+    radial-gradient(circle at 28% 34%, rgba(65, 182, 200, 0.32), transparent 20%),
+    radial-gradient(circle at 76% 60%, rgba(126, 99, 210, 0.3), transparent 22%);
   content: "";
   filter: blur(var(--terminal-blur, 0));
-  opacity: 0.44;
-  transform: scale(1.03);
+  opacity: 0.5;
+  transform: scale(1.06);
 }
 
 .workspace > * {
@@ -690,7 +693,7 @@ code {
   min-height: 0;
   border-top: 0;
   color: var(--text);
-  background: rgba(8, 14, 21, 0.42);
+  background: rgba(8, 14, 21, 0.18);
 }
 
 .terminal-tabs {
@@ -702,6 +705,8 @@ code {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   background: rgba(18, 28, 39, 0.96);
+  -webkit-backdrop-filter: blur(calc(var(--terminal-blur, 0) * 0.5));
+  backdrop-filter: blur(calc(var(--terminal-blur, 0) * 0.5));
 }
 
 .terminal-placeholder-label {
@@ -789,7 +794,8 @@ code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   line-height: 1.7;
-  background: rgba(12, 21, 31, 0.62);
+  background: rgba(12, 21, 31, 0.36);
+  -webkit-backdrop-filter: blur(var(--terminal-blur, 0));
   backdrop-filter: blur(var(--terminal-blur, 0));
 }
 
@@ -799,6 +805,7 @@ code {
   min-height: 0;
   height: 100%;
   padding: 12px 14px;
+  background: rgba(8, 14, 21, 0.22);
 }
 
 .terminal-pane.is-active {
@@ -807,6 +814,12 @@ code {
 
 .terminal-pane .xterm {
   height: 100%;
+  background: transparent;
+}
+
+.terminal-pane .xterm-viewport,
+.terminal-pane .xterm-screen {
+  background: transparent !important;
 }
 
 .terminal-empty {
