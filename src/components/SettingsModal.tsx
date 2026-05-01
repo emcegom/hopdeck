@@ -6,6 +6,7 @@ interface SettingsModalProps {
   settings: AppSettings;
   onClose: () => void;
   onImportConfig: () => Promise<void>;
+  onImportIterm2Theme: () => Promise<void>;
   onImportSshConfig: () => Promise<void>;
   onSave: (settings: AppSettings) => Promise<void>;
   onExportConfig: () => Promise<void>;
@@ -15,6 +16,7 @@ export function SettingsModal({
   settings,
   onClose,
   onImportConfig,
+  onImportIterm2Theme,
   onImportSshConfig,
   onSave,
   onExportConfig
@@ -101,6 +103,37 @@ export function SettingsModal({
               }
             />
           </label>
+          <label className="field">
+            <span>Background opacity</span>
+            <input
+              max={100}
+              min={15}
+              type="range"
+              value={draft.terminal.backgroundOpacity}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  terminal: { ...current.terminal, backgroundOpacity: Number.parseInt(event.target.value, 10) }
+                }))
+              }
+            />
+          </label>
+          <div className="theme-preview" aria-label="Terminal colors preview">
+            {draft.terminal.colors.ansi.slice(0, 16).map((color, index) => (
+              <span key={`${color}-${index}`} style={{ background: color }} />
+            ))}
+          </div>
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={() =>
+              void runAction(async () => {
+                await onImportIterm2Theme();
+              }, "Imported current iTerm2 profile")
+            }
+          >
+            Import iTerm2 theme
+          </button>
         </div>
 
         <div className="settings-section">

@@ -321,8 +321,20 @@ function App() {
     });
   }, []);
 
+  const importIterm2Theme = useCallback(async () => {
+    const nextSettings = await invoke<AppSettings>("import_iterm2_theme");
+    setSettings(withSettingsDefaults(nextSettings));
+  }, []);
+
+  const appShellStyle = {
+    "--terminal-blur": `${settings.terminal.backgroundBlur}px`,
+    "--terminal-bg": hexToRgba(settings.terminal.colors.background, settings.terminal.backgroundOpacity / 100),
+    "--terminal-fg": settings.terminal.colors.foreground,
+    "--terminal-accent": settings.terminal.colors.cursor
+  } as CSSProperties;
+
   return (
-    <main className="app-shell" style={{ "--terminal-blur": `${settings.terminal.backgroundBlur}px` } as CSSProperties}>
+    <main className="app-shell" style={appShellStyle}>
       <aside className="sidebar">
         <header className="sidebar-header">
           <div>
@@ -454,6 +466,7 @@ function App() {
           onClose={() => setIsSettingsOpen(false)}
           onExportConfig={exportConfig}
           onImportConfig={importConfig}
+          onImportIterm2Theme={importIterm2Theme}
           onImportSshConfig={importSshConfig}
           onSave={saveSettings}
         />
@@ -800,7 +813,32 @@ const defaultSettings: AppSettings = {
     fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
     fontSize: 13,
     cursorStyle: "block",
-    backgroundBlur: 0
+    backgroundBlur: 0,
+    backgroundOpacity: 100,
+    colors: {
+      background: "#0F1720",
+      foreground: "#DBE7F3",
+      cursor: "#41B6C8",
+      selection: "#24384A",
+      ansi: [
+        "#172331",
+        "#EF8A80",
+        "#7FD19B",
+        "#E5C15D",
+        "#69A7E8",
+        "#B99CFF",
+        "#41B6C8",
+        "#DBE7F3",
+        "#8EA0B4",
+        "#FFB8B0",
+        "#A6E3B6",
+        "#F4D675",
+        "#9BC7FF",
+        "#CFB8FF",
+        "#75D7E4",
+        "#F3F7FB"
+      ]
+    }
   },
   vault: {
     mode: "plain",
@@ -818,7 +856,15 @@ const withSettingsDefaults = (settings: AppSettings): AppSettings => ({
   ...settings,
   terminal: {
     ...defaultSettings.terminal,
-    ...settings.terminal
+    ...settings.terminal,
+    colors: {
+      ...defaultSettings.terminal.colors,
+      ...settings.terminal?.colors,
+      ansi:
+        settings.terminal?.colors?.ansi?.length === 16
+          ? settings.terminal.colors.ansi
+          : defaultSettings.terminal.colors.ansi
+    }
   },
   vault: {
     ...defaultSettings.vault,
@@ -829,6 +875,28 @@ const withSettingsDefaults = (settings: AppSettings): AppSettings => ({
     ...settings.connection
   }
 });
+
+const hexToRgba = (hex: string, alpha: number): string => {
+  const normalized = hex.trim().replace("#", "");
+  const value =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((digit) => digit + digit)
+          .join("")
+      : normalized;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) {
+    return `rgba(15, 23, 32, ${clamp(alpha, 0, 1)})`;
+  }
+
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1)})`;
+};
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
 const errorMessage = (caught: unknown): string => {
   if (caught instanceof Error) {

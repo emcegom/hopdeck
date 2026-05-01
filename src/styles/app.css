@@ -511,10 +511,10 @@ code {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 18%, rgba(65, 182, 200, 0.26), transparent 16%),
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--terminal-accent, #41b6c8) 26%, transparent), transparent 16%),
     radial-gradient(circle at 72% 34%, rgba(126, 99, 210, 0.22), transparent 18%),
     radial-gradient(circle at 88% 76%, rgba(229, 193, 93, 0.12), transparent 20%),
-    linear-gradient(180deg, #0f1720, #0b131c);
+    linear-gradient(180deg, var(--terminal-bg, #0f1720), #0b131c);
 }
 
 .workspace::before {
@@ -692,8 +692,8 @@ code {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   border-top: 0;
-  color: var(--text);
-  background: rgba(8, 14, 21, 0.18);
+  color: var(--terminal-fg, var(--text));
+  background: var(--terminal-bg, rgba(8, 14, 21, 0.18));
 }
 
 .terminal-tabs {
@@ -704,7 +704,7 @@ code {
   overflow: auto;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: rgba(18, 28, 39, 0.96);
+  background: color-mix(in srgb, var(--terminal-bg, #121c27) 86%, var(--panel) 14%);
   -webkit-backdrop-filter: blur(calc(var(--terminal-blur, 0) * 0.5));
   backdrop-filter: blur(calc(var(--terminal-blur, 0) * 0.5));
 }
@@ -794,7 +794,7 @@ code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 13px;
   line-height: 1.7;
-  background: rgba(12, 21, 31, 0.36);
+  background: var(--terminal-bg, rgba(12, 21, 31, 0.36));
   -webkit-backdrop-filter: blur(var(--terminal-blur, 0));
   backdrop-filter: blur(var(--terminal-blur, 0));
 }
@@ -805,7 +805,7 @@ code {
   min-height: 0;
   height: 100%;
   padding: 12px 14px;
-  background: rgba(8, 14, 21, 0.22);
+  background: transparent;
 }
 
 .terminal-pane.is-active {
@@ -974,6 +974,18 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.theme-preview {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.theme-preview span {
+  min-height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
 }
 
 .toggle-row,

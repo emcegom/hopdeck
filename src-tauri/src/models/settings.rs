@@ -42,6 +42,10 @@ pub struct TerminalSettings {
     pub cursor_style: String,
     #[serde(default)]
     pub background_blur: u16,
+    #[serde(default = "default_background_opacity")]
+    pub background_opacity: u8,
+    #[serde(default)]
+    pub colors: TerminalColors,
 }
 
 impl Default for TerminalSettings {
@@ -51,6 +55,35 @@ impl Default for TerminalSettings {
             font_size: default_font_size(),
             cursor_style: default_cursor_style(),
             background_blur: 0,
+            background_opacity: default_background_opacity(),
+            colors: TerminalColors::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalColors {
+    #[serde(default = "default_terminal_background")]
+    pub background: String,
+    #[serde(default = "default_terminal_foreground")]
+    pub foreground: String,
+    #[serde(default = "default_terminal_cursor")]
+    pub cursor: String,
+    #[serde(default = "default_terminal_selection")]
+    pub selection: String,
+    #[serde(default = "default_terminal_ansi")]
+    pub ansi: Vec<String>,
+}
+
+impl Default for TerminalColors {
+    fn default() -> Self {
+        Self {
+            background: default_terminal_background(),
+            foreground: default_terminal_foreground(),
+            cursor: default_terminal_cursor(),
+            selection: default_terminal_selection(),
+            ansi: default_terminal_ansi(),
         }
     }
 }
@@ -120,6 +153,36 @@ fn default_font_size() -> u16 {
 
 fn default_cursor_style() -> String {
     "block".to_string()
+}
+
+fn default_background_opacity() -> u8 {
+    100
+}
+
+fn default_terminal_background() -> String {
+    "#0F1720".to_string()
+}
+
+fn default_terminal_foreground() -> String {
+    "#DBE7F3".to_string()
+}
+
+fn default_terminal_cursor() -> String {
+    "#41B6C8".to_string()
+}
+
+fn default_terminal_selection() -> String {
+    "#24384A".to_string()
+}
+
+fn default_terminal_ansi() -> Vec<String> {
+    [
+        "#172331", "#EF8A80", "#7FD19B", "#E5C15D", "#69A7E8", "#B99CFF", "#41B6C8", "#DBE7F3",
+        "#8EA0B4", "#FFB8B0", "#A6E3B6", "#F4D675", "#9BC7FF", "#CFB8FF", "#75D7E4", "#F3F7FB",
+    ]
+    .iter()
+    .map(|color| (*color).to_string())
+    .collect()
 }
 
 fn default_vault_mode() -> String {

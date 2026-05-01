@@ -124,3 +124,8 @@ pub fn get_app_settings() -> Result<AppSettings> {
 pub fn save_app_settings(settings: AppSettings) -> Result<AppSettings> {
     SettingsStore::default()?.replace(settings)
 }
+
+#[tauri::command]
+pub fn import_iterm2_theme() -> Result<AppSettings> {
+    SettingsStore::default()?.import_iterm2_theme()
+}

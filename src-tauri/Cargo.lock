@@ -1307,6 +1307,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "directories",
+ "plist",
  "portable-pty",
  "regex",
  "serde",

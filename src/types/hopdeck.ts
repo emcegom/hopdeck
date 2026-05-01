@@ -86,6 +86,14 @@ export interface AppSettings {
     fontSize: number;
     cursorStyle: string;
     backgroundBlur: number;
+    backgroundOpacity: number;
+    colors: {
+      background: string;
+      foreground: string;
+      cursor: string;
+      selection: string;
+      ansi: string[];
+    };
   };
   vault: {
     mode: string;

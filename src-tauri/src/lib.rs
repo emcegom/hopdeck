@@ -31,6 +31,7 @@ pub fn run() {
             commands::get_password_for_host,
             commands::get_app_settings,
             commands::save_app_settings,
+            commands::import_iterm2_theme,
             terminal::start_terminal_session,
             terminal::write_terminal_session,
             terminal::resize_terminal_session,

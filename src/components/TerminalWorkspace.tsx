@@ -94,6 +94,7 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const themeKey = terminalThemeKey(settings);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -108,12 +109,7 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
       convertEol: true,
       fontFamily: settings.terminal.fontFamily,
       fontSize: settings.terminal.fontSize,
-      theme: {
-        background: "rgba(15, 23, 32, 0)",
-        foreground: "#dbe7f3",
-        cursor: "#41b6c8",
-        selectionBackground: "#24384a"
-      }
+      theme: createXtermTheme(settings)
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -187,7 +183,7 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
       fitAddonRef.current = null;
       void invoke("close_terminal_session", { sessionId: session.id });
     };
-  }, [session, settings.terminal.fontFamily, settings.terminal.fontSize]);
+  }, [session, settings.terminal.fontFamily, settings.terminal.fontSize, themeKey]);
 
   useEffect(() => {
     if (!isActive) {
@@ -212,3 +208,85 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
     />
   );
 }
+
+const createXtermTheme = (settings: AppSettings) => {
+  const colors = settings.terminal.colors;
+  const ansi = normalizeAnsi(colors.ansi);
+
+  return {
+    background: hexToRgba(colors.background, settings.terminal.backgroundOpacity / 100),
+    foreground: colors.foreground,
+    cursor: colors.cursor,
+    selectionBackground: colors.selection,
+    black: ansi[0],
+    red: ansi[1],
+    green: ansi[2],
+    yellow: ansi[3],
+    blue: ansi[4],
+    magenta: ansi[5],
+    cyan: ansi[6],
+    white: ansi[7],
+    brightBlack: ansi[8],
+    brightRed: ansi[9],
+    brightGreen: ansi[10],
+    brightYellow: ansi[11],
+    brightBlue: ansi[12],
+    brightMagenta: ansi[13],
+    brightCyan: ansi[14],
+    brightWhite: ansi[15]
+  };
+};
+
+const terminalThemeKey = (settings: AppSettings): string =>
+  [
+    settings.terminal.backgroundOpacity,
+    settings.terminal.colors.background,
+    settings.terminal.colors.foreground,
+    settings.terminal.colors.cursor,
+    settings.terminal.colors.selection,
+    ...normalizeAnsi(settings.terminal.colors.ansi)
+  ].join("|");
+
+const normalizeAnsi = (colors: string[]): string[] =>
+  colors.length === 16
+    ? colors
+    : [
+        "#172331",
+        "#EF8A80",
+        "#7FD19B",
+        "#E5C15D",
+        "#69A7E8",
+        "#B99CFF",
+        "#41B6C8",
+        "#DBE7F3",
+        "#8EA0B4",
+        "#FFB8B0",
+        "#A6E3B6",
+        "#F4D675",
+        "#9BC7FF",
+        "#CFB8FF",
+        "#75D7E4",
+        "#F3F7FB"
+      ];
+
+const hexToRgba = (hex: string, alpha: number): string => {
+  const normalized = hex.trim().replace("#", "");
+  const value =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((digit) => digit + digit)
+          .join("")
+      : normalized;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) {
+    return `rgba(15, 23, 32, ${clamp(alpha, 0, 1)})`;
+  }
+
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1)})`;
+};
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
