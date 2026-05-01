@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    collections::VecDeque,
     io::{Read, Write},
     sync::{Arc, Mutex},
     thread,
@@ -66,13 +67,7 @@ pub fn start_terminal_session(
         .ok_or_else(|| HopdeckError::HostNotFound(host_id.clone()))?;
     let resolved = ssh::build_ssh_command(&document, &host_id)?;
     let session_id = format!("session-{}", Uuid::new_v4());
-    let auto_login_password = match &host.auth {
-        HostAuth::Password {
-            password_ref: Some(password_ref),
-            auto_login: true,
-        } => VaultStore::default()?.password_for_ref(password_ref)?,
-        _ => None,
-    };
+    let auto_login_passwords = auto_login_passwords_for_chain(&document, &host_id)?;
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -109,7 +104,13 @@ pub fn start_terminal_session(
             },
         );
 
-    spawn_output_reader(app, session_id.clone(), reader, writer, auto_login_password);
+    spawn_output_reader(
+        app,
+        session_id.clone(),
+        reader,
+        writer,
+        auto_login_passwords,
+    );
 
     Ok(StartedTerminalSession {
         id: session_id,
@@ -199,23 +200,21 @@ fn spawn_output_reader(
     session_id: String,
     mut reader: Box<dyn Read + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    auto_login_password: Option<String>,
+    auto_login_passwords: Vec<String>,
 ) {
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
-        let mut auto_login = auto_login_password.map(AutoLogin::new);
+        let mut auto_login = AutoLogin::new(auto_login_passwords);
 
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(size) => {
                     let data = String::from_utf8_lossy(&buffer[..size]).to_string();
-                    if let Some(auto_login) = auto_login.as_mut() {
-                        if auto_login.should_write_password(&data) {
-                            if let Ok(mut writer) = writer.lock() {
-                                let _ = writer.write_all(auto_login.password_input().as_bytes());
-                                let _ = writer.flush();
-                            }
+                    if let Some(password_input) = auto_login.password_input_for_prompt(&data) {
+                        if let Ok(mut writer) = writer.lock() {
+                            let _ = writer.write_all(password_input.as_bytes());
+                            let _ = writer.flush();
                         }
                     }
 
@@ -248,36 +247,65 @@ fn terminal_error(error: impl ToString) -> HopdeckError {
     HopdeckError::Terminal(error.to_string())
 }
 
+fn auto_login_passwords_for_chain(
+    document: &crate::models::HostDocument,
+    host_id: &str,
+) -> Result<Vec<String>> {
+    let host = document
+        .hosts
+        .get(host_id)
+        .ok_or_else(|| HopdeckError::HostNotFound(host_id.to_string()))?;
+    let vault = VaultStore::default()?;
+    let mut passwords = Vec::new();
+
+    for chain_host_id in host.jump_chain.iter().chain(std::iter::once(&host.id)) {
+        let chain_host = document
+            .hosts
+            .get(chain_host_id)
+            .ok_or_else(|| HopdeckError::HostNotFound(chain_host_id.clone()))?;
+
+        let HostAuth::Password {
+            password_ref: Some(password_ref),
+            auto_login: true,
+        } = &chain_host.auth
+        else {
+            continue;
+        };
+
+        if let Some(password) = vault.password_for_ref(password_ref)? {
+            passwords.push(password);
+        }
+    }
+
+    Ok(passwords)
+}
+
 struct AutoLogin {
-    password: String,
+    passwords: VecDeque<String>,
     detector: PromptDetector,
-    has_written: bool,
 }
 
 impl AutoLogin {
-    fn new(password: String) -> Self {
+    fn new(passwords: Vec<String>) -> Self {
         Self {
-            password,
+            passwords: passwords.into(),
             detector: PromptDetector::default(),
-            has_written: false,
         }
     }
 
-    fn should_write_password(&mut self, data: &str) -> bool {
-        if self.has_written {
-            return false;
+    fn password_input_for_prompt(&mut self, data: &str) -> Option<String> {
+        if self.passwords.is_empty() {
+            return None;
         }
 
         if self.detector.push_and_detect(data) {
-            self.has_written = true;
-            return true;
+            return self
+                .passwords
+                .pop_front()
+                .map(|password| format!("{password}\n"));
         }
 
-        false
-    }
-
-    fn password_input(&self) -> String {
-        format!("{}\n", self.password)
+        None
     }
 }
 
@@ -369,10 +397,31 @@ mod tests {
 
     #[test]
     fn auto_login_writes_only_once() {
-        let mut auto_login = AutoLogin::new("secret".to_string());
+        let mut auto_login = AutoLogin::new(vec!["secret".to_string()]);
 
-        assert!(auto_login.should_write_password("Password:"));
-        assert_eq!(auto_login.password_input(), "secret\n");
-        assert!(!auto_login.should_write_password("Password:"));
+        assert_eq!(
+            auto_login.password_input_for_prompt("Password:"),
+            Some("secret\n".to_string())
+        );
+        assert_eq!(auto_login.password_input_for_prompt("Password:"), None);
+    }
+
+    #[test]
+    fn auto_login_writes_jump_chain_passwords_in_order() {
+        let mut auto_login =
+            AutoLogin::new(vec!["jump-secret".to_string(), "target-secret".to_string()]);
+
+        assert_eq!(
+            auto_login.password_input_for_prompt("hop@127.0.0.1's password:"),
+            Some("jump-secret\n".to_string())
+        );
+        assert_eq!(
+            auto_login.password_input_for_prompt("\r\nhop@target's password:"),
+            Some("target-secret\n".to_string())
+        );
+        assert_eq!(
+            auto_login.password_input_for_prompt("\r\nhop@target's password:"),
+            None
+        );
     }
 }
