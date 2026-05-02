@@ -161,12 +161,6 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
       });
     };
 
-    writeAndKeepBottom(`\x1b[90m$ ${session.command}\x1b[0m\r\n`, true);
-
-    if (session.message) {
-      writeAndKeepBottom(`\x1b[90m${session.message}\x1b[0m\r\n`, true);
-    }
-
     const writeOutputChunk = (chunk: TerminalOutputChunk) => {
       if (chunk.seq <= lastSeqRef.current) {
         return;
@@ -336,8 +330,6 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
     };
   }, [
     session.id,
-    session.command,
-    session.message,
     settings.terminal.autoCopySelection,
     settings.terminal.fontFamily,
     settings.terminal.fontSize,

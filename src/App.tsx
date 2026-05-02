@@ -461,6 +461,7 @@ function App() {
       return;
     }
 
+    event.preventDefault();
     void getCurrentWindow().startDragging().catch(() => {
       // Browser previews do not expose the Tauri window API.
     });
@@ -484,13 +485,6 @@ function App() {
       data-theme={effectiveTheme}
       style={appShellStyle}
     >
-      <header className="content-toolbar" data-tauri-drag-region onMouseDown={startWindowDrag}>
-        <div className="content-toolbar-brand" data-tauri-drag-region>
-          <strong>Hopdeck</strong>
-          <span>{isLoading ? "Loading hosts" : `${hostCount} hosts`}</span>
-        </div>
-      </header>
-
       <aside className={`sidebar${isSidebarCollapsed ? " is-collapsed" : ""}`}>
         {isSidebarCollapsed ? (
           <button
@@ -505,6 +499,7 @@ function App() {
         ) : (
           <>
             <header className="sidebar-header">
+              <div className="sidebar-window-drag" data-tauri-drag-region onMouseDown={startWindowDrag} />
               <div className="sidebar-title">
                 <h1>Hopdeck</h1>
                 <p>{isLoading ? "Loading hosts..." : `${hostCount} hosts`}</p>

@@ -34,6 +34,7 @@
   --top-surface: #121c27;
   --titlebar-bg: #121c27;
   --titlebar-workspace: #111a24;
+  --content-header-height: 38px;
   --workspace-bottom: #0b131c;
   --workspace-grid-a: rgba(255, 255, 255, 0.05);
   --workspace-grid-b: rgba(65, 182, 200, 0.06);
@@ -87,6 +88,7 @@
   --top-surface: #f8fbfd;
   --titlebar-bg: #f8fbfd;
   --titlebar-workspace: #f5f9fc;
+  --content-header-height: 38px;
   --workspace-bottom: #f2f6f8;
   --workspace-grid-a: rgba(30, 54, 80, 0.026);
   --workspace-grid-b: rgba(22, 138, 160, 0.028);
@@ -126,13 +128,13 @@ code {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(260px, var(--sidebar-width, 300px)) 6px minmax(0, 1fr);
-  grid-template-rows: 40px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
   background:
-    linear-gradient(180deg, var(--top-surface), var(--titlebar-workspace) 52px, var(--bg) 190px),
+    linear-gradient(180deg, var(--top-surface), var(--titlebar-workspace) 40px, var(--bg) 160px),
     var(--bg);
 }
 
@@ -140,53 +142,16 @@ code {
   grid-template-columns: 48px 0 minmax(0, 1fr);
 }
 
-.content-toolbar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  display: grid;
-  grid-template-columns: minmax(260px, var(--sidebar-width, 300px)) 6px minmax(0, 1fr);
-  align-items: center;
-  min-height: 40px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  background: var(--top-surface);
-  user-select: none;
-  -webkit-app-region: drag;
-}
-
-.content-toolbar-brand {
-  grid-column: 1;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  padding: 0 14px;
-}
-
-.content-toolbar-brand strong {
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 850;
-}
-
-.content-toolbar-brand span {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .sidebar {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
-  gap: 17px;
+  gap: 12px;
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  padding: 17px 12px 18px;
+  padding: 0 12px 18px;
   border-right: 1px solid var(--border);
   background:
     linear-gradient(
@@ -206,7 +171,7 @@ code {
 
 .sidebar-resizer {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1;
   position: relative;
   z-index: 3;
   width: 6px;
@@ -238,13 +203,23 @@ code {
 
 .sidebar-header {
   display: grid;
-  gap: 12px;
-  padding: 0 3px 2px;
+  gap: 11px;
+  padding: 0 3px 3px;
+}
+
+.sidebar-window-drag {
+  min-height: var(--content-header-height);
+  margin: 0 -15px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--titlebar-workspace) 86%, var(--panel) 14%);
+  user-select: none;
+  -webkit-app-region: drag;
 }
 
 .sidebar-title {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
   min-width: 0;
 }
 
@@ -261,22 +236,23 @@ code {
 }
 
 .sidebar-header h1 {
-  position: absolute;
-  width: 1px;
-  height: 1px;
+  min-width: 0;
   overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
+  color: var(--text-strong);
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1.05;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .sidebar-header p {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .detail-header h2 {
@@ -816,7 +792,7 @@ code {
 
 .workspace {
   grid-column: 3;
-  grid-row: 2;
+  grid-row: 1;
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
@@ -1019,9 +995,9 @@ code {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 38px;
+  min-height: var(--content-header-height);
   overflow: auto;
-  padding: 6px 16px;
+  padding: 4px 16px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   background: color-mix(in srgb, var(--titlebar-workspace) 86%, var(--terminal-bg, #121c27) 14%);
   -webkit-backdrop-filter: blur(calc(var(--terminal-blur, 0) * 0.5));

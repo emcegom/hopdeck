@@ -91,6 +91,7 @@ pub fn start_terminal_session(
     let mut command = CommandBuilder::new("ssh");
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
+    remove_locale_env(&mut command);
     for arg in &resolved.argv {
         command.arg(arg);
     }
@@ -139,6 +140,21 @@ pub fn start_terminal_session(
         }),
         created_at: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+fn remove_locale_env(command: &mut CommandBuilder) {
+    for key in [
+        "LANG",
+        "LC_ALL",
+        "LC_COLLATE",
+        "LC_CTYPE",
+        "LC_MESSAGES",
+        "LC_MONETARY",
+        "LC_NUMERIC",
+        "LC_TIME",
+    ] {
+        command.env_remove(key);
+    }
 }
 
 #[tauri::command]

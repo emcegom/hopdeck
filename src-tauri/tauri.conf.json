@@ -18,8 +18,13 @@
         "minWidth": 980,
         "minHeight": 640,
         "theme": "Light",
-        "titleBarStyle": "Transparent",
-        "hiddenTitle": true
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "decorations": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 25
+        }
       }
     ],
     "security": {
