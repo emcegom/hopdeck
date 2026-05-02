@@ -20,7 +20,7 @@ First local-first macOS release for Hopdeck, an SSH jump workspace built with Ru
 ### Download
 
 - `Hopdeck_0.1.0_aarch64.app.zip` for Apple Silicon Macs.
-- SHA256: `faef615fc8c949455b5ee22661b4a7756c0eb659bffdac1291646545e2027782`
+- SHA256: `bb132d34a81f99af5b60ecef646e5105aaae5ff8af7cb53c4dc7d709180f139e`
 
 ### Notes
 
