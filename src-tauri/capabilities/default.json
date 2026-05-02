@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Permissions needed by the main Hopdeck window.",
   "windows": ["main"],
-  "permissions": ["core:event:default", "clipboard-manager:allow-write-text"]
+  "permissions": [
+    "core:event:default",
+    "core:app:allow-set-app-theme",
+    "core:window:allow-set-theme",
+    "core:window:allow-start-dragging",
+    "clipboard-manager:allow-write-text"
+  ]
 }

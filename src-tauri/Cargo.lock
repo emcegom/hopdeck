@@ -1388,6 +1388,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "directories",
+ "objc2-app-kit",
  "plist",
  "portable-pty",
  "regex",

@@ -89,6 +89,8 @@ pub fn start_terminal_session(
         .map_err(terminal_error)?;
 
     let mut command = CommandBuilder::new("ssh");
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
     for arg in &resolved.argv {
         command.arg(arg);
     }

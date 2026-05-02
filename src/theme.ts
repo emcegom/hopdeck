@@ -56,8 +56,43 @@ export const lightTerminalColors: TerminalColors = {
 export const terminalColorsForAppearance = (appearance: Exclude<Appearance, "system">): TerminalColors =>
   appearance === "light" ? lightTerminalColors : darkTerminalColors;
 
+export const terminalBackgroundAlpha = (backgroundOpacity: number, backgroundBlur: number): number => {
+  const alpha = clamp(backgroundOpacity / 100, 0.15, 1);
+
+  if (backgroundBlur <= 0) {
+    return alpha;
+  }
+
+  return Math.min(alpha, 0.9);
+};
+
+export const terminalBackgroundColor = (hex: string, backgroundOpacity: number, backgroundBlur: number): string =>
+  hexToRgba(hex, terminalBackgroundAlpha(backgroundOpacity, backgroundBlur));
+
 export const isBuiltInTerminalColors = (colors: TerminalColors): boolean =>
   areTerminalColorsEqual(colors, darkTerminalColors) || areTerminalColorsEqual(colors, lightTerminalColors);
+
+const hexToRgba = (hex: string, alpha: number): string => {
+  const normalized = hex.trim().replace("#", "");
+  const value =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((digit) => digit + digit)
+          .join("")
+      : normalized;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(value)) {
+    return `rgba(15, 23, 32, ${clamp(alpha, 0, 1)})`;
+  }
+
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1)})`;
+};
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
 const areTerminalColorsEqual = (left: TerminalColors, right: TerminalColors): boolean =>
   left.background === right.background &&

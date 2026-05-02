@@ -1,17 +1,32 @@
 # Hopdeck
 
-Hopdeck is a local-first SSH jump console for macOS. It is built with Rust,
-Tauri, React, xterm.js, and a real expandable tree model so day-to-day host
-navigation feels closer to Xshell-style session management than to scripting
-Terminal.app or iTerm2.
+Hopdeck is a local-first SSH jump console for macOS. It keeps host inventory,
+jump chains, saved connection settings, and embedded terminal sessions in one
+focused desktop app while still using the system `ssh` client for the actual
+connection.
 
-The product goal is straightforward: keep SSH inventory, jump chains, and
-terminal sessions in one focused desktop app while leaving connection execution
-to the system `ssh` client.
+It is built with Rust, Tauri, React, and xterm.js.
 
-## Quick Install
+## Highlights
 
-Hopdeck currently ships a macOS Apple Silicon build:
+- Manage hosts in an expandable folder tree.
+- Create, edit, duplicate, move, favorite, and delete SSH hosts.
+- Open hosts in embedded terminal tabs.
+- Build jump-host connections through `ssh -J`.
+- Search by alias, address, user, `user@host`, and tags.
+- Import hosts from `~/.ssh/config`.
+- Import and export Hopdeck backup bundles.
+- Tune terminal appearance, font settings, opacity, blur, and colors.
+- Import the current iTerm2 profile colors.
+- Keep data on your machine under `~/.hopdeck/`.
+
+Hopdeck does not automate Terminal.app or iTerm2 windows. Terminal sessions run
+inside the app through a local pseudoterminal and the OpenSSH binary already on
+your Mac.
+
+## Install
+
+Hopdeck currently publishes a macOS Apple Silicon build:
 
 ```text
 Hopdeck_0.1.0_aarch64.app.zip
@@ -29,48 +44,37 @@ mv ~/Downloads/Hopdeck.app /Applications/Hopdeck.app
 open /Applications/Hopdeck.app
 ```
 
-If macOS blocks the first launch because the app is not notarized yet, use:
+If macOS blocks the first launch because the app is not notarized yet, remove
+the quarantine attribute and open it again:
 
 ```zsh
 xattr -dr com.apple.quarantine /Applications/Hopdeck.app
 open /Applications/Hopdeck.app
 ```
 
-You can also install manually by downloading the zip from the release page,
-unarchiving it, and dragging `Hopdeck.app` into `/Applications`.
+You can also download the zip from the release page, unarchive it, and drag
+`Hopdeck.app` into `/Applications`.
 
-## Uninstall
+## Usage
 
-Quit Hopdeck first, then remove the app bundle:
+On first launch, Hopdeck creates a sample host tree if no local host document
+exists. Add or import real hosts, then double-click a host to open a terminal
+session.
 
-```zsh
-osascript -e 'quit app "Hopdeck"'
-rm -rf /Applications/Hopdeck.app
-```
+Common workflows:
 
-Hopdeck stores user data locally under `~/.hopdeck/`. Remove this directory only
-if you want to delete hosts, saved passwords, settings, and imported theme data:
-
-```zsh
-rm -rf ~/.hopdeck
-```
-
-Optional cleanup for macOS/Tauri runtime state:
-
-```zsh
-rm -rf ~/Library/Application\ Support/com.emcegom.hopdeck
-rm -rf ~/Library/Caches/com.emcegom.hopdeck
-rm -rf ~/Library/WebKit/com.emcegom.hopdeck
-rm -rf ~/Library/Saved\ Application\ State/com.emcegom.hopdeck.savedState
-rm -f ~/Library/Preferences/com.emcegom.hopdeck.plist
-```
-
-The important directory is `~/.hopdeck`; the `~/Library/...` paths only contain
-app runtime preferences, caches, WebView data, and saved window state.
+- Use the left sidebar to browse folders and hosts.
+- Double-click a host to start an SSH session.
+- Use terminal tabs in the workspace to switch between active sessions.
+- Press `Cmd+W` to close the current terminal tab.
+- Use Settings to adjust theme, terminal rendering, import/export, and iTerm2
+  color import.
+- Use host jump chains when a target should connect through one or more jump
+  hosts.
 
 ## Local Data
 
-Hopdeck is local-first. The app data directory is:
+Hopdeck is local-first. The main app data directory is:
 
 ```text
 ~/.hopdeck/
@@ -80,144 +84,54 @@ Current files:
 
 ```text
 ~/.hopdeck/
-  hosts.json      # host tree, host records, jump chains
-  vault.json      # plain saved password vault
-  settings.json   # UI, terminal, blur, iTerm2-imported theme settings
+  hosts.json                 # host tree, host records, jump chains
+  vault.json                 # plain saved password vault
+  settings.json              # UI, terminal, and connection settings
+  hopdeck-backup.json        # default export/import bundle path
 ```
 
-Back up this directory before deleting or reinstalling if you want to keep your
-connections and saved credentials.
+Back up `~/.hopdeck/` before deleting or reinstalling Hopdeck if you want to
+keep your hosts, settings, and saved credentials.
 
-## Product Positioning
+## Security Notes
 
-Hopdeck is for operators and developers who maintain many SSH targets and need
-fast switching, clear grouping, and explicit jump-host paths.
-
-It is intentionally local-first:
-
-- Host inventory is stored on disk under `~/.hopdeck/`.
-- SSH sessions are launched locally through `portable-pty`.
-- Hopdeck does not depend on a hosted service, browser account, or remote sync.
-- macOS Keychain is not used in the current credential model.
-
-Hopdeck is not trying to replace full terminal emulators. It provides a managed
-connection workspace around the system SSH client, with the terminal embedded in
-the app.
-
-## Core Interaction Model
-
-- The left sidebar is the source of truth for navigation.
-- Folders can be expanded, collapsed, created, renamed, and deleted.
-- Hosts are selected from the tree and edited in a modal.
-- Double-clicking a host starts an SSH terminal session.
-- Search filters hosts by alias, address, user, `user@host`, and tags.
-- The right workspace is reserved for terminal tabs and session output.
-- A host can reference one or more jump hosts; Hopdeck converts that chain into
-  an `ssh -J` command.
-- Failed session starts are surfaced as terminal-like tabs with the attempted
-  command and error message.
-
-The current UI avoids AppleScript automation and does not open external
-Terminal.app or iTerm2 windows.
-
-## Feature Scope
-
-### P0
-
-P0 is the minimum usable SSH workspace:
-
-- Load and save a local `version: 2` host document.
-- Create a sample tree on first launch or empty data file.
-- Migrate legacy flat/grouped `version: 1` host files into the tree model.
-- Display nested folders and host references in the sidebar.
-- Create, rename, and delete folders.
-- Create, edit, and delete hosts.
-- Remove deleted hosts from the tree and from affected jump chains.
-- Build SSH commands from host metadata and jump chains.
-- Start embedded terminal sessions through the local `ssh` binary.
-- Write user input to the pty and stream SSH output back into xterm.js.
-- Search host inventory by common connection fields.
-
-### P1
-
-P1 turns the prototype into a daily driver:
-
-- Persist and expose app settings, including theme and terminal preferences.
-- Add a visible background blur setting for terminal or window surfaces.
-- Add import and export flows for host documents and vault documents.
-- Add stronger validation before replacing imported data.
-- Add session lifecycle controls such as reconnect and close-on-disconnect.
-- Add drag-and-drop reorganization inside the tree.
-- Add Favorites, Recent, Jump Hosts, and All Hosts smart views.
-- Add password copy/autofill affordances that match the selected vault mode.
-- Improve empty states, destructive action confirmations, and error recovery.
-
-### P2
-
-P2 covers polish, scale, and interoperability:
-
-- Optional encrypted vault modes beyond the current plain vault.
-- Optional macOS Keychain integration if the product chooses to support it later.
-- Per-host visual preferences and terminal profiles.
-- Multi-window or detached terminal support.
-- Connection history, audit-friendly local activity metadata, and richer recent
-  session views.
-- Cross-machine import/export compatibility guarantees.
-- Bulk editing and duplicate detection for large inventories.
-- Backup rotation and recovery tools for `~/.hopdeck`.
-
-## Credential Security
-
-Hopdeck currently models credentials with a plain local vault:
+Hopdeck's current vault mode is `plain`. Saved password values are written to:
 
 ```text
 ~/.hopdeck/vault.json
 ```
 
-The current vault mode is `plain`. A plain vault stores password values in JSON
-that can be viewed by anyone who can read the file. This is useful for early
-local testing and migration work, but it is not encrypted secret storage.
+Anyone who can read that file can read the saved passwords. Hopdeck does not
+currently use macOS Keychain or encrypted vault storage.
 
-Important security notes:
+For sensitive environments:
 
-- The current implementation does not use macOS Keychain.
-- Plain vault passwords are inspectable on disk.
-- File permissions and disk encryption are the user's primary protection.
-- Do not place production passwords in `vault.json` unless that local risk is
-  acceptable.
-- SSH agent and key-based authentication are preferred when available.
+- Prefer SSH agent or key-based authentication.
+- Avoid storing production passwords in the plain vault unless the local
+  plaintext risk is acceptable.
+- Use disk encryption and normal file permission hygiene.
+- Treat exported backup bundles as sensitive because they include the vault.
 
-The host model can reference password records with `passwordRef`. When a host is
-configured for password auth and auto-login is enabled, Hopdeck watches the
-embedded SSH terminal output for password/passphrase prompts and writes the
-stored password once for that session.
+Password auto-login is a convenience feature: when enabled, Hopdeck watches the
+embedded terminal for password-like prompts and writes the saved password once
+for that session.
 
-## Background Blur Setting
+## Backup And Import
 
-Hopdeck exposes background blur as a terminal appearance setting:
-
-- Users can set blur strength from the app settings UI.
-- The value is persisted as `terminal.backgroundBlur` in
-  `~/.hopdeck/settings.json`.
-- The terminal surface applies the value after reload.
-- A value of `0` disables blur.
-- The setting is intentionally subtle so terminal text stays readable.
-
-## Import And Export
-
-Hopdeck's data model is JSON-first, which makes manual backup possible even
-before a dedicated UI exists.
-
-Current data files:
+The Settings screen can export a Hopdeck bundle to:
 
 ```text
-~/.hopdeck/
-  hosts.json
-  vault.json
-  settings.json
+~/.hopdeck/hopdeck-backup.json
 ```
 
-Manual export:
+The same screen can import that bundle back into Hopdeck. Before import,
+Hopdeck writes a timestamped copy of the current local data:
+
+```text
+~/.hopdeck/hopdeck-backup-before-import-YYYYMMDDHHMMSS.json
+```
+
+You can also back up the raw files manually:
 
 ```zsh
 mkdir -p ~/Desktop/hopdeck-backup
@@ -226,7 +140,7 @@ cp ~/.hopdeck/vault.json ~/Desktop/hopdeck-backup/
 cp ~/.hopdeck/settings.json ~/Desktop/hopdeck-backup/
 ```
 
-Manual import:
+Manual restore:
 
 ```zsh
 mkdir -p ~/.hopdeck
@@ -235,12 +149,12 @@ cp ~/Desktop/hopdeck-backup/vault.json ~/.hopdeck/vault.json
 cp ~/Desktop/hopdeck-backup/settings.json ~/.hopdeck/settings.json
 ```
 
-Restart Hopdeck after manual import so the app reloads the files from disk.
+Restart Hopdeck after manually replacing JSON files so the app reloads them
+from disk.
 
-Dedicated import/export UI should validate JSON shape, preserve a backup of the
-previous local files, and clearly warn when importing a plain vault.
+## Development
 
-## Development Requirements
+Requirements:
 
 - macOS.
 - Rust and Cargo.
@@ -248,52 +162,44 @@ previous local files, and clearly warn when importing a plain vault.
 - Tauri 2 prerequisites for macOS.
 - A working local `ssh` binary for terminal session testing.
 
-## Install Dependencies
+Install dependencies:
 
 ```zsh
 npm install
 ```
 
-## Run In Development
+Run the desktop app in development:
 
 ```zsh
 npm run dev
 ```
 
-This runs `tauri dev`, which starts the Vite frontend and the Tauri shell.
-
-## Build Frontend
+Build the frontend:
 
 ```zsh
 npm run frontend:build
 ```
 
-This runs TypeScript checking and Vite production bundling.
-
-## Test Rust Backend
+Run Rust backend tests:
 
 ```zsh
 cd src-tauri
 cargo test
 ```
 
-The current backend tests cover tree persistence, folder operations, legacy
-migration, and SSH command construction.
-
-## Build App
+Build a production app bundle:
 
 ```zsh
 npm run build
 ```
 
-This runs the configured Tauri build. The app bundle is produced under the
-Tauri target output directory, for example:
+The macOS bundle is created under:
 
 ```text
 src-tauri/target/release/bundle/macos/Hopdeck.app
 ```
 
-Create a zip suitable for GitHub Release uploads:
+Create a release zip:
 
 ```zsh
 mkdir -p release
@@ -303,26 +209,55 @@ ditto -c -k --sequesterRsrc --keepParent \
 shasum -a 256 release/Hopdeck_0.1.0_aarch64.app.zip
 ```
 
+## Uninstall
+
+Quit Hopdeck and remove the app bundle:
+
+```zsh
+osascript -e 'quit app "Hopdeck"'
+rm -rf /Applications/Hopdeck.app
+```
+
+Remove local Hopdeck data only if you want to delete hosts, settings, saved
+passwords, and backup bundles:
+
+```zsh
+rm -rf ~/.hopdeck
+```
+
+Optional macOS/Tauri runtime cleanup:
+
+```zsh
+rm -rf ~/Library/Application\ Support/com.emcegom.hopdeck
+rm -rf ~/Library/Caches/com.emcegom.hopdeck
+rm -rf ~/Library/WebKit/com.emcegom.hopdeck
+rm -rf ~/Library/Saved\ Application\ State/com.emcegom.hopdeck.savedState
+rm -f ~/Library/Preferences/com.emcegom.hopdeck.plist
+```
+
+The `~/Library/...` paths contain runtime preferences, caches, WebView data, and
+saved window state. Your important Hopdeck data is under `~/.hopdeck/`.
+
 ## Troubleshooting
 
 ### The app starts with sample hosts
 
-Hopdeck creates a sample host tree when `~/.hopdeck/hosts.json` does not exist
-or is empty. Create or import real hosts, then reload or restart the app.
+Hopdeck creates sample data when `~/.hopdeck/hosts.json` does not exist or is
+empty. Create or import real hosts, then reload or restart the app.
 
-### Host data does not change after editing JSON
+### JSON edits are not visible
 
 Restart Hopdeck, or use the sidebar reload button. The running frontend keeps a
-copy of the currently loaded host document in state.
+copy of the currently loaded host document in memory.
 
-### SSH session fails immediately
+### SSH fails immediately
 
-Check that the system `ssh` command works in a normal terminal for the same
-target. Hopdeck builds and runs `ssh` locally, so DNS, keys, agent state, known
-hosts prompts, jump host reachability, and network access still come from the
-local environment.
+Check the same target with the system `ssh` command in a normal terminal.
+Hopdeck runs local OpenSSH, so DNS, keys, agent state, known-host prompts,
+jump-host reachability, and network access still come from your local
+environment.
 
-### Jump host command looks wrong
+### A jump-host command looks wrong
 
 Inspect the host's `jumpChain` in `~/.hopdeck/hosts.json`. Each item must point
 to an existing host id. When a host or folder is deleted, Hopdeck prunes deleted
@@ -330,41 +265,25 @@ host ids from remaining jump chains.
 
 ### Passwords are visible in the vault file
 
-That is expected for the current `plain` vault mode. Hopdeck does not encrypt
-`vault.json` and does not use macOS Keychain yet.
+That is expected for the current plain vault mode. Use SSH keys or the local SSH
+agent when you need stronger credential handling.
 
-### Imported data fails to load
-
-Validate that `hosts.json` is either the current tree model:
-
-```json
-{
-  "version": 2,
-  "tree": [],
-  "hosts": {}
-}
-```
-
-or a legacy grouped host file that Hopdeck can migrate. Keep a copy of the
-broken file before replacing it.
-
-### Background blur is missing or does not persist
+### Background blur is missing
 
 Open Settings and confirm `Background blur` is greater than `0`. The persisted
 value lives in `~/.hopdeck/settings.json` as `terminal.backgroundBlur`.
 
 ## Roadmap
 
-- Add timestamped backup rotation before import.
-- Add richer validation and preview for imported data.
-- Add signed/notarized DMG release automation.
-- Add smart views for Favorites, Recent, Jump Hosts, and All Hosts.
-- Add safer credential storage options beyond the plain vault.
-- Add stronger terminal lifecycle controls and reconnect behavior.
-- Add automated frontend tests for core interactions.
-- Add release packaging notes for signed/notarized macOS builds.
+- Signed and notarized macOS release packaging.
+- Safer credential storage beyond the plain vault.
+- Stronger session lifecycle controls, including reconnect behavior.
+- Smart views for favorites, recent hosts, jump hosts, and all hosts.
+- Larger-inventory workflows such as duplicate detection and bulk editing.
+- Automated frontend coverage for core interactions.
 
 ## Documentation
 
 - [Tree model](docs/tree-model.md)
+- [Terminal interaction design](docs/terminal-interaction-design.md)
 - [Product acceptance checklist](docs/product-acceptance-checklist.md)

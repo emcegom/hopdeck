@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { isBuiltInTerminalColors, terminalColorsForAppearance } from "../theme";
+import { isBuiltInTerminalColors, terminalBackgroundColor, terminalColorsForAppearance } from "../theme";
 import type { AppSettings } from "../types/hopdeck";
 
 interface SettingsModalProps {
@@ -81,6 +81,16 @@ export function SettingsModal({
       }
     }));
   };
+  const updateTerminal = (terminal: Partial<AppSettings["terminal"]>) => {
+    setDraft((current) => ({
+      ...current,
+      terminal: {
+        ...current.terminal,
+        ...terminal
+      }
+    }));
+  };
+  const selectedFontPreset = fontPresetValue(draft.terminal.fontFamily);
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -122,19 +132,163 @@ export function SettingsModal({
 
         <div className="settings-section">
           <h3>Terminal</h3>
+          <div className="settings-actions terminal-preset-actions">
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={() => updateTerminal(compactTerminalPreset)}
+            >
+              Compact terminal
+            </button>
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={() => updateTerminal(comfortableTerminalPreset)}
+            >
+              Comfortable terminal
+            </button>
+          </div>
           <label className="field">
-            <span>Font size</span>
+            <span>Font preset</span>
+            <select
+              value={selectedFontPreset}
+              onChange={(event) => {
+                const preset = terminalFontPresets.find((item) => item.value === event.target.value);
+
+                if (preset) {
+                  updateTerminal({ fontFamily: preset.value });
+                }
+              }}
+            >
+              {terminalFontPresets.map((preset) => (
+                <option key={preset.label} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Font family</span>
             <input
-              inputMode="numeric"
-              value={draft.terminal.fontSize}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  terminal: { ...current.terminal, fontSize: Number.parseInt(event.target.value, 10) || 13 }
-                }))
-              }
+              value={draft.terminal.fontFamily}
+              onChange={(event) => updateTerminal({ fontFamily: event.target.value })}
             />
           </label>
+          <div className="settings-control-grid">
+            <label className="field">
+              <span>Font size</span>
+              <input
+                inputMode="numeric"
+                value={draft.terminal.fontSize}
+                onChange={(event) => updateTerminal({ fontSize: parseIntSetting(event.target.value, 13) })}
+              />
+            </label>
+            <label className="field">
+              <span>Line height</span>
+              <input
+                max={1.5}
+                min={1}
+                step={0.01}
+                type="number"
+                value={draft.terminal.lineHeight}
+                onChange={(event) => updateTerminal({ lineHeight: parseFloatSetting(event.target.value, 1.15) })}
+              />
+            </label>
+            <label className="field">
+              <span>Letter spacing</span>
+              <input
+                max={2}
+                min={-1}
+                step={0.1}
+                type="number"
+                value={draft.terminal.letterSpacing}
+                onChange={(event) => updateTerminal({ letterSpacing: parseFloatSetting(event.target.value, 0) })}
+              />
+            </label>
+            <label className="field">
+              <span>Cursor</span>
+              <select
+                value={draft.terminal.cursorStyle}
+                onChange={(event) => updateTerminal({ cursorStyle: event.target.value })}
+              >
+                <option value="block">Block</option>
+                <option value="bar">Bar</option>
+                <option value="underline">Underline</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Text weight</span>
+              <select
+                value={draft.terminal.fontWeight}
+                onChange={(event) => updateTerminal({ fontWeight: event.target.value })}
+              >
+                {fontWeightOptions.map((weight) => (
+                  <option key={weight} value={weight}>
+                    {weight}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Bold weight</span>
+              <select
+                value={draft.terminal.fontWeightBold}
+                onChange={(event) => updateTerminal({ fontWeightBold: event.target.value })}
+              >
+                {fontWeightOptions.map((weight) => (
+                  <option key={weight} value={weight}>
+                    {weight}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Contrast</span>
+              <input
+                max={7}
+                min={1}
+                step={0.5}
+                type="number"
+                value={draft.terminal.minimumContrastRatio}
+                onChange={(event) =>
+                  updateTerminal({ minimumContrastRatio: parseFloatSetting(event.target.value, 4.5) })
+                }
+              />
+            </label>
+            <label className="check-row terminal-check-row">
+              <input
+                checked={draft.terminal.drawBoldTextInBrightColors}
+                type="checkbox"
+                onChange={(event) => updateTerminal({ drawBoldTextInBrightColors: event.target.checked })}
+              />
+              <span>Bright bold text</span>
+            </label>
+          </div>
+          <div
+            className="terminal-type-preview"
+            style={{
+              background: terminalBackgroundColor(
+                draft.terminal.colors.background,
+                draft.terminal.backgroundOpacity,
+                draft.terminal.backgroundBlur
+              ),
+              color: draft.terminal.colors.foreground,
+              fontFamily: draft.terminal.fontFamily,
+              fontSize: `${draft.terminal.fontSize}px`,
+              fontWeight: draft.terminal.fontWeight,
+              letterSpacing: `${draft.terminal.letterSpacing}px`,
+              lineHeight: draft.terminal.lineHeight
+            }}
+          >
+            <span style={{ color: draft.terminal.colors.ansi[2] }}>edm@app</span>
+            <span style={{ color: draft.terminal.colors.ansi[6] }}> ~/work</span>
+            <span> $ </span>
+            <strong style={{ color: draft.terminal.colors.ansi[3], fontWeight: draft.terminal.fontWeightBold }}>
+              echo Hopdeck
+            </strong>
+            <span className={`terminal-preview-cursor ${draft.terminal.cursorStyle}`} style={{ background: draft.terminal.colors.cursor }} />
+          </div>
           <label className="field">
             <span>Background blur</span>
             <input
@@ -142,12 +296,7 @@ export function SettingsModal({
               min={0}
               type="range"
               value={draft.terminal.backgroundBlur}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  terminal: { ...current.terminal, backgroundBlur: Number.parseInt(event.target.value, 10) }
-                }))
-              }
+              onChange={(event) => updateTerminal({ backgroundBlur: parseIntSetting(event.target.value, 0) })}
             />
           </label>
           <label className="field">
@@ -157,24 +306,14 @@ export function SettingsModal({
               min={15}
               type="range"
               value={draft.terminal.backgroundOpacity}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  terminal: { ...current.terminal, backgroundOpacity: Number.parseInt(event.target.value, 10) }
-                }))
-              }
+              onChange={(event) => updateTerminal({ backgroundOpacity: parseIntSetting(event.target.value, 100) })}
             />
           </label>
           <label className="check-row">
             <input
               checked={draft.terminal.autoCopySelection}
               type="checkbox"
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  terminal: { ...current.terminal, autoCopySelection: event.target.checked }
-                }))
-              }
+              onChange={(event) => updateTerminal({ autoCopySelection: event.target.checked })}
             />
             <span>Copy selection automatically</span>
           </label>
@@ -192,7 +331,7 @@ export function SettingsModal({
               }, "Imported current iTerm2 profile")
             }
           >
-            Import iTerm2 theme
+            Import iTerm2 profile
           </button>
         </div>
 
@@ -244,6 +383,62 @@ export function SettingsModal({
     </div>
   );
 }
+
+const terminalFontPresets = [
+  {
+    label: "SF Mono",
+    value: '"SFMono-Regular", "JetBrains Mono", "MesloLGS NF", "Hack Nerd Font", Menlo, Monaco, Consolas, monospace'
+  },
+  {
+    label: "JetBrains Mono",
+    value: '"JetBrains Mono", "SFMono-Regular", "MesloLGS NF", "Hack Nerd Font", Menlo, Monaco, Consolas, monospace'
+  },
+  {
+    label: "MesloLGS NF",
+    value: '"MesloLGS NF", "MesloLGS-NF-Regular", "SFMono-Regular", "JetBrains Mono", Menlo, Monaco, Consolas, monospace'
+  },
+  {
+    label: "Menlo",
+    value: 'Menlo, "SFMono-Regular", Monaco, Consolas, monospace'
+  }
+];
+
+const compactTerminalPreset: Partial<AppSettings["terminal"]> = {
+  fontFamily: '"SFMono-Regular", Menlo, Monaco, "JetBrains Mono", monospace',
+  fontSize: 12,
+  fontWeight: "400",
+  fontWeightBold: "700",
+  lineHeight: 1.1,
+  letterSpacing: 0,
+  minimumContrastRatio: 4.5,
+  drawBoldTextInBrightColors: true
+};
+
+const comfortableTerminalPreset: Partial<AppSettings["terminal"]> = {
+  fontFamily: '"JetBrains Mono", "SFMono-Regular", "MesloLGS NF", "Hack Nerd Font", Menlo, Monaco, Consolas, monospace',
+  fontSize: 13,
+  fontWeight: "400",
+  fontWeightBold: "700",
+  lineHeight: 1.15,
+  letterSpacing: 0,
+  minimumContrastRatio: 4.5,
+  drawBoldTextInBrightColors: true
+};
+
+const fontWeightOptions = ["300", "400", "500", "600", "700", "800"];
+
+const fontPresetValue = (fontFamily: string): string =>
+  terminalFontPresets.find((preset) => preset.value === fontFamily)?.value ?? "custom";
+
+const parseIntSetting = (value: string, fallback: number): number => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseFloatSetting = (value: string, fallback: number): number => {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const errorMessage = (caught: unknown): string => {
   if (caught instanceof Error) {

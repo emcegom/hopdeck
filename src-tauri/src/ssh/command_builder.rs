@@ -40,6 +40,7 @@ pub fn build_ssh_command(document: &HostDocument, host_id: &str) -> Result<Resol
     argv.push("StrictHostKeyChecking=accept-new".to_string());
     argv.push("-o".to_string());
     argv.push("ConnectTimeout=10".to_string());
+    argv.push("-tt".to_string());
 
     if let Some(proxy_command) = proxy_command(&jump_hosts) {
         argv.push("-o".to_string());
@@ -128,7 +129,7 @@ mod tests {
 
         assert_eq!(
             resolved.command,
-            "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o 'ProxyCommand=ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p 22 -W %h:%p zane@1.2.3.4' -p 22 app@10.0.1.20"
+            "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -tt -o 'ProxyCommand=ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p 22 -W %h:%p zane@1.2.3.4' -p 22 app@10.0.1.20"
         );
     }
 
@@ -144,6 +145,7 @@ mod tests {
                 "StrictHostKeyChecking=accept-new",
                 "-o",
                 "ConnectTimeout=10",
+                "-tt",
                 "-p",
                 "22",
                 "zane@1.2.3.4"
@@ -151,7 +153,7 @@ mod tests {
         );
         assert_eq!(
             resolved.command,
-            "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p 22 zane@1.2.3.4"
+            "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -tt -p 22 zane@1.2.3.4"
         );
     }
 }

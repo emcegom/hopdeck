@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default = "default_version")]
@@ -31,13 +31,25 @@ impl Default for ThemeMode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSettings {
     #[serde(default = "default_font_family")]
     pub font_family: String,
     #[serde(default = "default_font_size")]
     pub font_size: u16,
+    #[serde(default = "default_font_weight")]
+    pub font_weight: String,
+    #[serde(default = "default_font_weight_bold")]
+    pub font_weight_bold: String,
+    #[serde(default = "default_line_height")]
+    pub line_height: f64,
+    #[serde(default = "default_letter_spacing")]
+    pub letter_spacing: f64,
+    #[serde(default = "default_minimum_contrast_ratio")]
+    pub minimum_contrast_ratio: f64,
+    #[serde(default = "default_draw_bold_text_in_bright_colors")]
+    pub draw_bold_text_in_bright_colors: bool,
     #[serde(default = "default_cursor_style")]
     pub cursor_style: String,
     #[serde(default)]
@@ -55,6 +67,12 @@ impl Default for TerminalSettings {
         Self {
             font_family: default_font_family(),
             font_size: default_font_size(),
+            font_weight: default_font_weight(),
+            font_weight_bold: default_font_weight_bold(),
+            line_height: default_line_height(),
+            letter_spacing: default_letter_spacing(),
+            minimum_contrast_ratio: default_minimum_contrast_ratio(),
+            draw_bold_text_in_bright_colors: default_draw_bold_text_in_bright_colors(),
             cursor_style: default_cursor_style(),
             background_blur: 0,
             background_opacity: default_background_opacity(),
@@ -147,11 +165,35 @@ fn default_version() -> u32 {
 }
 
 fn default_font_family() -> String {
-    "JetBrains Mono".to_string()
+    "\"SFMono-Regular\", \"JetBrains Mono\", \"MesloLGS NF\", \"Hack Nerd Font\", Menlo, Monaco, Consolas, monospace".to_string()
 }
 
 fn default_font_size() -> u16 {
     13
+}
+
+fn default_font_weight() -> String {
+    "400".to_string()
+}
+
+fn default_font_weight_bold() -> String {
+    "700".to_string()
+}
+
+fn default_line_height() -> f64 {
+    1.15
+}
+
+fn default_letter_spacing() -> f64 {
+    0.0
+}
+
+fn default_minimum_contrast_ratio() -> f64 {
+    4.5
+}
+
+fn default_draw_bold_text_in_bright_colors() -> bool {
+    true
 }
 
 fn default_cursor_style() -> String {

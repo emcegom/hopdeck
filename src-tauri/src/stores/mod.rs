@@ -16,7 +16,7 @@ pub use host_store::*;
 pub use settings_store::*;
 pub use vault_store::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigBundle {
     pub version: u32,

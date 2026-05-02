@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type FontWeight } from "@xterm/xterm";
 
+import { terminalBackgroundColor } from "../theme";
 import {
   displayHost,
   type AppSettings,
@@ -35,10 +37,23 @@ export function TerminalWorkspace({
   onSessionExit
 }: TerminalWorkspaceProps) {
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null;
+  const startWindowDrag = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+
+    if (event.button !== 0 || target.closest("button, .terminal-tab")) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    void getCurrentWindow().startDragging().catch(() => {
+      // Browser previews do not expose the Tauri window API.
+    });
+  }, []);
 
   return (
     <section className="terminal-workspace" aria-label="Terminal workspace">
-      <header className="terminal-tabs">
+      <header className="terminal-tabs" data-tauri-drag-region onMouseDown={startWindowDrag}>
         {sessions.length > 0 ? (
           sessions.map((session) => (
             <div
@@ -100,6 +115,7 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const resizeRef = useRef<(() => void) | null>(null);
   const lastSeqRef = useRef(0);
   const themeKey = terminalThemeKey(settings);
 
@@ -112,19 +128,43 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
 
     const terminal = new Terminal({
       allowTransparency: true,
+      cursorStyle: terminalCursorStyle(settings.terminal.cursorStyle),
       cursorBlink: true,
       convertEol: true,
+      drawBoldTextInBrightColors: settings.terminal.drawBoldTextInBrightColors,
       fontFamily: settings.terminal.fontFamily,
       fontSize: settings.terminal.fontSize,
+      fontWeight: terminalFontWeight(settings.terminal.fontWeight, "400"),
+      fontWeightBold: terminalFontWeight(settings.terminal.fontWeightBold, "700"),
+      letterSpacing: settings.terminal.letterSpacing,
+      lineHeight: settings.terminal.lineHeight,
+      minimumContrastRatio: settings.terminal.minimumContrastRatio,
+      scrollback: 10000,
+      scrollOnUserInput: true,
       theme: createXtermTheme(settings)
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);
-    terminal.write(`\x1b[90m$ ${session.command}\x1b[0m\r\n`);
+    let disposed = false;
+    let shouldStickToBottom = true;
+    let resizeFrame: number | null = null;
+
+    const writeAndKeepBottom = (data: string, forceScroll = false) => {
+      const shouldFollowBottom = forceScroll || shouldStickToBottom || isTerminalAtBottom(terminal);
+
+      terminal.write(data, () => {
+        if (!disposed && shouldFollowBottom) {
+          terminal.scrollToBottom();
+          shouldStickToBottom = true;
+        }
+      });
+    };
+
+    writeAndKeepBottom(`\x1b[90m$ ${session.command}\x1b[0m\r\n`, true);
 
     if (session.message) {
-      terminal.write(`\x1b[90m${session.message}\x1b[0m\r\n`);
+      writeAndKeepBottom(`\x1b[90m${session.message}\x1b[0m\r\n`, true);
     }
 
     const writeOutputChunk = (chunk: TerminalOutputChunk) => {
@@ -133,13 +173,18 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
       }
 
       lastSeqRef.current = chunk.seq;
-      terminal.write(chunk.data);
+      writeAndKeepBottom(chunk.data);
     };
 
     const dataDisposable = terminal.onData((data) => {
+      shouldStickToBottom = true;
+      terminal.scrollToBottom();
       void invoke("write_terminal_session", { sessionId: session.id, data }).catch((caught) => {
         terminal.write(`\r\n\x1b[31m[hopdeck] input failed: ${String(caught)}\x1b[0m\r\n`);
       });
+    });
+    const scrollDisposable = terminal.onScroll(() => {
+      shouldStickToBottom = isTerminalAtBottom(terminal);
     });
     let autoCopyTimer: number | null = null;
     let lastCopiedSelection = "";
@@ -181,7 +226,6 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
 
     let outputUnlisten: (() => void) | null = null;
     let exitUnlisten: (() => void) | null = null;
-    let disposed = false;
 
     void listen<TerminalOutputEvent>("terminal-output", (event) => {
       if (event.payload.sessionId === session.id) {
@@ -214,7 +258,7 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
 
     void listen<TerminalExitEvent>("terminal-exit", (event) => {
       if (event.payload.sessionId === session.id) {
-        terminal.write("\r\n\x1b[90m[hopdeck] session closed\x1b[0m\r\n");
+        writeAndKeepBottom("\r\n\x1b[90m[hopdeck] session closed\x1b[0m\r\n", true);
         onSessionExit(session.id);
       }
     })
@@ -230,27 +274,51 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
       });
 
     const resize = () => {
-      try {
-        fitAddon.fit();
-        void invoke("resize_terminal_session", {
-          sessionId: session.id,
-          rows: terminal.rows,
-          cols: terminal.cols
-        });
-      } catch {
-        // xterm can throw while the pane is hidden; the next visible resize will recover.
+      if (resizeFrame !== null) {
+        window.cancelAnimationFrame(resizeFrame);
       }
+
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = null;
+
+        if (disposed) {
+          return;
+        }
+
+        try {
+          fitAddon.fit();
+          void invoke("resize_terminal_session", {
+            sessionId: session.id,
+            rows: terminal.rows,
+            cols: terminal.cols
+          });
+          if (shouldStickToBottom) {
+            terminal.scrollToBottom();
+          }
+        } catch {
+          // xterm can throw while the pane is hidden; the next visible resize will recover.
+        }
+      });
     };
+    resizeRef.current = resize;
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
+    if (container.parentElement) {
+      resizeObserver.observe(container.parentElement);
+    }
+    window.addEventListener("resize", resize);
     window.setTimeout(resize, 0);
 
     return () => {
       disposed = true;
+      if (resizeFrame !== null) {
+        window.cancelAnimationFrame(resizeFrame);
+      }
       outputUnlisten?.();
       exitUnlisten?.();
       autoCopyDisposable?.dispose();
+      scrollDisposable.dispose();
       if (autoCopyPointerHandler) {
         container.removeEventListener("mouseup", autoCopyPointerHandler);
         container.removeEventListener("touchend", autoCopyPointerHandler);
@@ -259,6 +327,8 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
         window.clearTimeout(autoCopyTimer);
       }
       resizeObserver.disconnect();
+      window.removeEventListener("resize", resize);
+      resizeRef.current = null;
       dataDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
@@ -271,6 +341,13 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
     settings.terminal.autoCopySelection,
     settings.terminal.fontFamily,
     settings.terminal.fontSize,
+    settings.terminal.fontWeight,
+    settings.terminal.fontWeightBold,
+    settings.terminal.lineHeight,
+    settings.terminal.letterSpacing,
+    settings.terminal.cursorStyle,
+    settings.terminal.minimumContrastRatio,
+    settings.terminal.drawBoldTextInBrightColors,
     themeKey,
     onSessionExit
   ]);
@@ -282,7 +359,9 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
 
     window.setTimeout(() => {
       try {
-        fitAddonRef.current?.fit();
+        resizeRef.current?.();
+        terminalRef.current?.refresh(0, terminalRef.current.rows - 1);
+        terminalRef.current?.scrollToBottom();
         terminalRef.current?.focus();
       } catch {
         // Hidden panes are measured again once they are visible.
@@ -293,9 +372,10 @@ function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPa
   return (
     <div
       className={`terminal-pane${isActive ? " is-active" : ""}`}
-      ref={containerRef}
       aria-hidden={!isActive}
-    />
+    >
+      <div className="terminal-pane-inner" ref={containerRef} />
+    </div>
   );
 }
 
@@ -304,7 +384,11 @@ const createXtermTheme = (settings: AppSettings) => {
   const ansi = normalizeAnsi(colors.ansi);
 
   return {
-    background: hexToRgba(colors.background, settings.terminal.backgroundOpacity / 100),
+    background: terminalBackgroundColor(
+      colors.background,
+      settings.terminal.backgroundOpacity,
+      settings.terminal.backgroundBlur
+    ),
     foreground: colors.foreground,
     cursor: colors.cursor,
     selectionBackground: colors.selection,
@@ -330,12 +414,30 @@ const createXtermTheme = (settings: AppSettings) => {
 const terminalThemeKey = (settings: AppSettings): string =>
   [
     settings.terminal.backgroundOpacity,
+    settings.terminal.backgroundBlur,
     settings.terminal.colors.background,
     settings.terminal.colors.foreground,
     settings.terminal.colors.cursor,
     settings.terminal.colors.selection,
     ...normalizeAnsi(settings.terminal.colors.ansi)
   ].join("|");
+
+const terminalCursorStyle = (cursorStyle: string): "block" | "underline" | "bar" => {
+  if (cursorStyle === "underline" || cursorStyle === "bar") {
+    return cursorStyle;
+  }
+
+  return "block";
+};
+
+const terminalFontWeight = (fontWeight: string, fallback: FontWeight): FontWeight => {
+  if (fontWeight === "normal" || fontWeight === "bold") {
+    return fontWeight;
+  }
+
+  const parsed = Number.parseInt(fontWeight, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const copyTextToClipboard = async (text: string): Promise<void> => {
   try {
@@ -353,6 +455,11 @@ const copyTextToClipboard = async (text: string): Promise<void> => {
 
     throw pluginError;
   }
+};
+
+const isTerminalAtBottom = (terminal: Terminal): boolean => {
+  const buffer = terminal.buffer.active;
+  return buffer.viewportY >= buffer.baseY;
 };
 
 const normalizeAnsi = (colors: string[]): string[] =>
@@ -376,25 +483,3 @@ const normalizeAnsi = (colors: string[]): string[] =>
         "#75D7E4",
         "#F3F7FB"
       ];
-
-const hexToRgba = (hex: string, alpha: number): string => {
-  const normalized = hex.trim().replace("#", "");
-  const value =
-    normalized.length === 3
-      ? normalized
-          .split("")
-          .map((digit) => digit + digit)
-          .join("")
-      : normalized;
-
-  if (!/^[0-9a-fA-F]{6}$/.test(value)) {
-    return `rgba(15, 23, 32, ${clamp(alpha, 0, 1)})`;
-  }
-
-  const red = Number.parseInt(value.slice(0, 2), 16);
-  const green = Number.parseInt(value.slice(2, 4), 16);
-  const blue = Number.parseInt(value.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1)})`;
-};
-
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);

@@ -141,6 +141,43 @@ fn apply_iterm2_theme_to_settings(settings: &mut AppSettings, preferences: &Valu
         settings.terminal.font_size = font_size;
     }
 
+    if let Some(cursor_style) = profile
+        .get("Cursor Type")
+        .and_then(number_from_value)
+        .and_then(cursor_style_from_iterm2_type)
+    {
+        settings.terminal.cursor_style = cursor_style.to_string();
+    }
+
+    if let Some(use_bold_font) = profile.get("Use Bold Font").and_then(Value::as_boolean) {
+        settings.terminal.font_weight_bold = if use_bold_font { "700" } else { "400" }.to_string();
+    }
+
+    if let Some(draw_bold_bright) = bool_from_first_profile_key(
+        profile,
+        &[
+            "Draw Bold Text In Bright Colors",
+            "Draw Bold Text in Bright Colors",
+            "Bold Text in Bright Colors",
+            "Brighten Bold Text",
+        ],
+    ) {
+        settings.terminal.draw_bold_text_in_bright_colors = draw_bold_bright;
+    }
+
+    if let Some(minimum_contrast_ratio) = number_from_first_profile_key(
+        profile,
+        &[
+            "Minimum Contrast Ratio",
+            "Minimum Contrast",
+            "Minimum Contrast Ratio Value",
+        ],
+    )
+    .and_then(minimum_contrast_ratio_from_iterm2)
+    {
+        settings.terminal.minimum_contrast_ratio = minimum_contrast_ratio;
+    }
+
     Ok(())
 }
 
@@ -219,21 +256,119 @@ fn number_from_value(value: &Value) -> Option<f64> {
         })
 }
 
+fn bool_from_first_profile_key(profile: &Dictionary, keys: &[&str]) -> Option<bool> {
+    keys.iter()
+        .find_map(|key| profile.get(*key).and_then(Value::as_boolean))
+}
+
+fn number_from_first_profile_key(profile: &Dictionary, keys: &[&str]) -> Option<f64> {
+    keys.iter()
+        .find_map(|key| profile.get(*key).and_then(number_from_value))
+}
+
+fn cursor_style_from_iterm2_type(cursor_type: f64) -> Option<&'static str> {
+    match cursor_type.round() as i64 {
+        0 => Some("block"),
+        1 => Some("bar"),
+        2 => Some("underline"),
+        _ => None,
+    }
+}
+
+fn minimum_contrast_ratio_from_iterm2(value: f64) -> Option<f64> {
+    if !value.is_finite() {
+        return None;
+    }
+
+    let ratio = if (0.0..=1.0).contains(&value) {
+        1.0 + (value * 20.0)
+    } else {
+        value
+    };
+
+    Some(round_to_tenth(ratio.clamp(1.0, 21.0)))
+}
+
+fn round_to_tenth(value: f64) -> f64 {
+    (value * 10.0).round() / 10.0
+}
+
 fn parse_iterm2_font(font: &str) -> Option<(String, u16)> {
-    let (family, size) = font.trim().rsplit_once(' ')?;
-    let family = family.trim();
-    if family.is_empty() {
+    let (postscript_name, size) = font.trim().rsplit_once(' ')?;
+    let postscript_name = postscript_name.trim();
+    if postscript_name.is_empty() {
         return None;
     }
 
     let size = size.parse::<f64>().ok()?.round().clamp(8.0, 40.0) as u16;
-    let escaped_family = family.replace('"', "\\\"");
-    Some((
-        format!(
-            "\"{escaped_family}\", \"SFMono-Regular\", Consolas, \"Liberation Mono\", monospace"
-        ),
-        size,
-    ))
+    let mut families = Vec::new();
+    push_font_family(&mut families, postscript_name.to_string());
+
+    if let Some(family_name) = family_name_from_postscript_name(postscript_name) {
+        push_font_family(&mut families, family_name);
+    }
+
+    push_font_family(&mut families, "SFMono-Regular".to_string());
+    push_font_family(&mut families, "Menlo".to_string());
+    push_font_family(&mut families, "monospace".to_string());
+
+    Some((families.join(", "), size))
+}
+
+fn push_font_family(families: &mut Vec<String>, family: String) {
+    let css_family = css_font_family(&family);
+    if !families.iter().any(|existing| existing == &css_family) {
+        families.push(css_family);
+    }
+}
+
+fn css_font_family(family: &str) -> String {
+    if family.eq_ignore_ascii_case("monospace") {
+        return "monospace".to_string();
+    }
+
+    format!("\"{}\"", family.replace('"', "\\\""))
+}
+
+fn family_name_from_postscript_name(postscript_name: &str) -> Option<String> {
+    let base = strip_font_style_suffix(postscript_name);
+    if base == postscript_name {
+        return None;
+    }
+
+    let family = base.replace('-', " ");
+    let family = family.trim();
+    (!family.is_empty()).then(|| family.to_string())
+}
+
+fn strip_font_style_suffix(name: &str) -> &str {
+    const STYLE_SUFFIXES: &[&str] = &[
+        "Regular",
+        "Medium",
+        "Bold",
+        "Italic",
+        "Light",
+        "Thin",
+        "Semibold",
+        "SemiBold",
+        "DemiBold",
+        "ExtraLight",
+        "UltraLight",
+        "ExtraBold",
+        "Heavy",
+        "Black",
+        "Book",
+        "Roman",
+        "Retina",
+    ];
+
+    STYLE_SUFFIXES
+        .iter()
+        .find_map(|suffix| {
+            name.strip_suffix(&format!("-{suffix}"))
+                .or_else(|| name.strip_suffix(suffix))
+        })
+        .unwrap_or(name)
 }
 
 #[cfg(test)]
@@ -274,6 +409,12 @@ mod tests {
 
         assert_eq!(settings.version, 1);
         assert_eq!(settings.terminal.font_size, 15);
+        assert_eq!(settings.terminal.font_weight, "400");
+        assert_eq!(settings.terminal.font_weight_bold, "700");
+        assert_eq!(settings.terminal.line_height, 1.15);
+        assert_eq!(settings.terminal.letter_spacing, 0.0);
+        assert_eq!(settings.terminal.minimum_contrast_ratio, 4.5);
+        assert!(settings.terminal.draw_bold_text_in_bright_colors);
         assert_eq!(settings.terminal.cursor_style, "block");
         assert_eq!(settings.terminal.background_opacity, 100);
         assert_eq!(settings.terminal.colors.ansi.len(), 16);
@@ -312,9 +453,33 @@ mod tests {
         assert_eq!(settings.terminal.background_blur, 15);
         assert_eq!(
             settings.terminal.font_family,
-            "\"MesloLGS-NF-Regular\", \"SFMono-Regular\", Consolas, \"Liberation Mono\", monospace"
+            "\"MesloLGS-NF-Regular\", \"MesloLGS NF\", \"SFMono-Regular\", \"Menlo\", monospace"
         );
         assert_eq!(settings.terminal.font_size, 14);
+        assert_eq!(settings.terminal.cursor_style, "bar");
+        assert_eq!(settings.terminal.font_weight_bold, "400");
+        assert_eq!(settings.terminal.minimum_contrast_ratio, 11.0);
+        assert!(!settings.terminal.draw_bold_text_in_bright_colors);
+    }
+
+    #[test]
+    fn parses_iterm2_font_with_family_fallbacks() {
+        assert_eq!(
+            parse_iterm2_font("JetBrainsMono-Medium 13.6"),
+            Some((
+                "\"JetBrainsMono-Medium\", \"JetBrainsMono\", \"SFMono-Regular\", \"Menlo\", monospace"
+                    .to_string(),
+                14
+            ))
+        );
+
+        assert_eq!(
+            parse_iterm2_font("Menlo-Regular 12"),
+            Some((
+                "\"Menlo-Regular\", \"Menlo\", \"SFMono-Regular\", monospace".to_string(),
+                12
+            ))
+        );
     }
 
     fn sample_iterm2_profile(guid: &str) -> Dictionary {
@@ -324,6 +489,11 @@ mod tests {
             "Normal Font".to_string(),
             Value::String("MesloLGS-NF-Regular 14".to_string()),
         );
+        profile.insert("Cursor Type".to_string(), Value::Integer(1.into()));
+        profile.insert("Use Bold Font".to_string(), Value::Boolean(false));
+        profile.insert("Minimum Contrast".to_string(), Value::Real(0.5));
+        profile.insert("Brighten Bold Text".to_string(), Value::Boolean(false));
+        profile.insert("ASCII Ligatures".to_string(), Value::Boolean(true));
         profile.insert("Transparency".to_string(), Value::Real(0.1952563976774142));
         profile.insert("Blur".to_string(), Value::Boolean(true));
         profile.insert("Blur Radius".to_string(), Value::Real(14.83252918956044));

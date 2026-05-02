@@ -1,12 +1,23 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent
+} from "react";
+import { setTheme as setAppTheme } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { FolderEditorModal } from "./components/FolderEditorModal";
 import { HostEditorModal } from "./components/HostEditorModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import { TreeNavigator, type TreeDragSource } from "./components/TreeNavigator";
-import { darkTerminalColors } from "./theme";
+import { darkTerminalColors, terminalBackgroundColor } from "./theme";
 import type { AppSettings, Host, HostDocument, TerminalSession, TreeNode, VaultDocument } from "./types/hopdeck";
 
 type HostEditorState =
@@ -39,15 +50,27 @@ function App() {
   const [vault, setVault] = useState<VaultDocument | null>(null);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const systemTheme = useSystemTheme();
   const effectiveTheme = settings.theme === "system" ? systemTheme : settings.theme;
 
+  useEffect(() => {
+    void Promise.all([setAppTheme(effectiveTheme), getCurrentWindow().setTheme(effectiveTheme)]).catch(() => {
+      // Browser previews do not expose the Tauri app API.
+    });
+  }, [effectiveTheme]);
+
   const selectedHost = selectedHostId && document ? document.hosts[selectedHostId] ?? null : null;
 
   const hostCount = useMemo(() => (document ? Object.keys(document.hosts).length : 0), [document]);
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
+    [activeSessionId, sessions]
+  );
   const filteredTree = useMemo(
     () => filterTree(document?.tree ?? [], document?.hosts ?? {}, searchQuery),
     [document, searchQuery]
@@ -341,6 +364,60 @@ function App() {
     });
   }, []);
 
+  const closeActiveSession = useCallback(() => {
+    const sessionId = sessions.some((session) => session.id === activeSessionId)
+      ? activeSessionId
+      : sessions[0]?.id ?? null;
+
+    if (sessionId) {
+      closeSession(sessionId);
+    }
+  }, [activeSessionId, closeSession, sessions]);
+
+  useEffect(() => {
+    const closeShortcut = (event: KeyboardEvent) => {
+      const isCloseShortcut =
+        event.key.toLowerCase() === "w" &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey;
+
+      if (!isCloseShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      closeActiveSession();
+    };
+
+    window.addEventListener("keydown", closeShortcut, true);
+
+    return () => {
+      window.removeEventListener("keydown", closeShortcut, true);
+    };
+  }, [closeActiveSession]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void listen("hopdeck-close-active-session", () => {
+      closeActiveSession();
+    }).then((nextUnlisten) => {
+      if (disposed) {
+        nextUnlisten();
+      } else {
+        unlisten = nextUnlisten;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [closeActiveSession]);
+
   const markSessionClosed = useCallback((sessionId: string) => {
     setSessions((current) =>
       current.map((session) =>
@@ -354,103 +431,204 @@ function App() {
     setSettings(withSettingsDefaults(nextSettings));
   }, []);
 
+  const startSidebarResize = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (isSidebarCollapsed) {
+        return;
+      }
+
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+
+      const resize = (moveEvent: PointerEvent) => {
+        const nextWidth = startWidth + moveEvent.clientX - startX;
+        setSidebarWidth(Math.min(520, Math.max(260, nextWidth)));
+      };
+      const stopResize = () => {
+        window.removeEventListener("pointermove", resize);
+        window.removeEventListener("pointerup", stopResize);
+      };
+
+      window.addEventListener("pointermove", resize);
+      window.addEventListener("pointerup", stopResize);
+    },
+    [isSidebarCollapsed, sidebarWidth]
+  );
+
+  const startWindowDrag = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    void getCurrentWindow().startDragging().catch(() => {
+      // Browser previews do not expose the Tauri window API.
+    });
+  }, []);
+
   const appShellStyle = {
+    "--sidebar-width": `${sidebarWidth}px`,
     "--terminal-blur": `${settings.terminal.backgroundBlur}px`,
-    "--terminal-bg": hexToRgba(settings.terminal.colors.background, settings.terminal.backgroundOpacity / 100),
+    "--terminal-bg": terminalBackgroundColor(
+      settings.terminal.colors.background,
+      settings.terminal.backgroundOpacity,
+      settings.terminal.backgroundBlur
+    ),
     "--terminal-fg": settings.terminal.colors.foreground,
     "--terminal-accent": settings.terminal.colors.cursor
   } as CSSProperties;
 
   return (
-    <main className="app-shell" data-theme={effectiveTheme} style={appShellStyle}>
-      <aside className="sidebar">
-        <header className="sidebar-header">
-          <div>
-            <h1>Hopdeck</h1>
-            <p>{isLoading ? "Loading hosts..." : `${hostCount} hosts`}</p>
-          </div>
-          <div className="sidebar-actions">
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() =>
-                setHostEditor({ mode: "create", host: createDefaultHost(document?.hosts ?? {}), parentFolderId: null })
-              }
-              title="New host"
-            >
-              <span className="new-host-icon" aria-hidden="true" />
-            </button>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setFolderEditor({ mode: "create", parentFolderId: null })}
-              title="New folder"
-            >
-              <span className="new-folder-icon" aria-hidden="true" />
-            </button>
-            <button className="icon-button" type="button" onClick={loadDocument} title="Reload hosts">
-              <span className="reload-icon" aria-hidden="true" />
-            </button>
-            <button className="icon-button" type="button" onClick={() => setIsSettingsOpen(true)} title="Settings">
-              <span className="settings-icon" aria-hidden="true" />
-            </button>
-          </div>
-        </header>
+    <main
+      className={`app-shell${isSidebarCollapsed ? " is-sidebar-collapsed" : ""}`}
+      data-theme={effectiveTheme}
+      style={appShellStyle}
+    >
+      <header className="content-toolbar" data-tauri-drag-region onMouseDown={startWindowDrag}>
+        <div className="content-toolbar-brand" data-tauri-drag-region>
+          <strong>Hopdeck</strong>
+          <span>{isLoading ? "Loading hosts" : `${hostCount} hosts`}</span>
+        </div>
+      </header>
 
-        {error ? (
-          <div className="load-error" role="alert">
-            <strong>Unable to load host document</strong>
-            <span>{error}</span>
-          </div>
-        ) : null}
-
-        <label className="sidebar-search">
-          <span className="search-icon" aria-hidden="true" />
-          <input
-            aria-label="Search hosts"
-            placeholder="Search hosts"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-        </label>
-
-        {isLoading ? (
-          <div className="loading-list" aria-label="Loading host tree">
-            <span />
-            <span />
-            <span />
-          </div>
+      <aside className={`sidebar${isSidebarCollapsed ? " is-collapsed" : ""}`}>
+        {isSidebarCollapsed ? (
+          <button
+            className="icon-button sidebar-toggle"
+            type="button"
+            onClick={() => setIsSidebarCollapsed(false)}
+            title="Show sidebar"
+            aria-label="Show sidebar"
+          >
+            <SidebarActionIcon name="expand" />
+          </button>
         ) : (
-          <TreeNavigator
-            tree={filteredTree}
-            hosts={document?.hosts ?? {}}
-            expandedNodeIds={visibleExpandedNodeIds}
-            selectedHostId={selectedHostId}
-            searchQuery={searchQuery}
-            onToggleFolder={toggleFolder}
-            onSelectHost={(hostId) => setSelectedHostId(hostId)}
-            onOpenHost={openHost}
-            onCreateHost={(parentFolderId) =>
-              setHostEditor({ mode: "create", host: createDefaultHost(document?.hosts ?? {}), parentFolderId })
-            }
-            onCreateFolder={(parentFolderId) => setFolderEditor({ mode: "create", parentFolderId })}
-            onEditFolder={(folder) => {
-              const sourceFolder = findFolderById(document?.tree ?? [], folder.id) ?? folder;
-              setFolderEditor({ mode: "edit", folder: sourceFolder });
-            }}
-            onDeleteFolder={deleteFolder}
-            onEditHost={(hostId) => {
-              const host = document?.hosts[hostId];
-              if (host) {
-                setHostEditor({ mode: "edit", host });
-              }
-            }}
-            onDuplicateHost={duplicateHost}
-            onDeleteHost={deleteHost}
-            onMoveNode={moveNode}
-          />
+          <>
+            <header className="sidebar-header">
+              <div className="sidebar-title">
+                <h1>Hopdeck</h1>
+                <p>{isLoading ? "Loading hosts..." : `${hostCount} hosts`}</p>
+              </div>
+              <div className="sidebar-actions">
+                <button
+                  className="sidebar-action-button"
+                  type="button"
+                  onClick={() =>
+                    setHostEditor({ mode: "create", host: createDefaultHost(document?.hosts ?? {}), parentFolderId: null })
+                  }
+                  title="New host"
+                  aria-label="New host"
+                >
+                  <SidebarActionIcon name="host" />
+                  <span>Host</span>
+                </button>
+                <button
+                  className="sidebar-action-button"
+                  type="button"
+                  onClick={() => setFolderEditor({ mode: "create", parentFolderId: null })}
+                  title="New folder"
+                  aria-label="New folder"
+                >
+                  <SidebarActionIcon name="folder" />
+                  <span>Folder</span>
+                </button>
+                <button
+                  className="sidebar-action-button"
+                  type="button"
+                  onClick={loadDocument}
+                  title="Reload hosts"
+                  aria-label="Reload hosts"
+                >
+                  <SidebarActionIcon name="refresh" />
+                  <span>Reload</span>
+                </button>
+                <button
+                  className="sidebar-action-button"
+                  type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  title="Settings"
+                  aria-label="Settings"
+                >
+                  <SidebarActionIcon name="settings" />
+                  <span>Prefs</span>
+                </button>
+                <button
+                  className="sidebar-action-button"
+                  type="button"
+                  onClick={() => setIsSidebarCollapsed(true)}
+                  title="Hide sidebar"
+                  aria-label="Hide sidebar"
+                >
+                  <SidebarActionIcon name="collapse" />
+                  <span>Hide</span>
+                </button>
+              </div>
+            </header>
+
+            {error ? (
+              <div className="load-error" role="alert">
+                <strong>Unable to load host document</strong>
+                <span>{error}</span>
+              </div>
+            ) : null}
+
+            <label className="sidebar-search">
+              <span className="search-icon" aria-hidden="true" />
+              <input
+                aria-label="Search hosts"
+                placeholder="Search hosts"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </label>
+
+            {isLoading ? (
+              <div className="loading-list" aria-label="Loading host tree">
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : (
+              <TreeNavigator
+                tree={filteredTree}
+                hosts={document?.hosts ?? {}}
+                expandedNodeIds={visibleExpandedNodeIds}
+                selectedHostId={selectedHostId}
+                searchQuery={searchQuery}
+                onToggleFolder={toggleFolder}
+                onSelectHost={(hostId) => setSelectedHostId(hostId)}
+                onOpenHost={openHost}
+                onCreateHost={(parentFolderId) =>
+                  setHostEditor({ mode: "create", host: createDefaultHost(document?.hosts ?? {}), parentFolderId })
+                }
+                onCreateFolder={(parentFolderId) => setFolderEditor({ mode: "create", parentFolderId })}
+                onEditFolder={(folder) => {
+                  const sourceFolder = findFolderById(document?.tree ?? [], folder.id) ?? folder;
+                  setFolderEditor({ mode: "edit", folder: sourceFolder });
+                }}
+                onDeleteFolder={deleteFolder}
+                onEditHost={(hostId) => {
+                  const host = document?.hosts[hostId];
+                  if (host) {
+                    setHostEditor({ mode: "edit", host });
+                  }
+                }}
+                onDuplicateHost={duplicateHost}
+                onDeleteHost={deleteHost}
+                onMoveNode={moveNode}
+              />
+            )}
+          </>
         )}
       </aside>
+
+      <button
+        aria-label="Resize sidebar"
+        className="sidebar-resizer"
+        onPointerDown={startSidebarResize}
+        tabIndex={-1}
+        type="button"
+      />
 
       <section className="workspace">
         <TerminalWorkspace
@@ -501,6 +679,73 @@ function App() {
         />
       ) : null}
     </main>
+  );
+}
+
+type SidebarActionIconName = "host" | "folder" | "refresh" | "settings" | "collapse" | "expand";
+
+function SidebarActionIcon({ name }: { name: SidebarActionIconName }) {
+  if (name === "host") {
+    return (
+      <svg className="sidebar-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="5" width="13" height="12" rx="3" />
+        <path d="M8 20h8" />
+        <path d="M12 17v3" />
+        <circle className="sidebar-action-icon-fill" cx="17" cy="17" r="5" />
+        <path className="sidebar-action-icon-on-fill" d="M17 14v6M14 17h6" />
+      </svg>
+    );
+  }
+
+  if (name === "folder") {
+    return (
+      <svg className="sidebar-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3.5 7.5h6l1.7 2h9.3v8.8a2.2 2.2 0 0 1-2.2 2.2H5.7a2.2 2.2 0 0 1-2.2-2.2Z" />
+        <path d="M3.5 7.5v-1A2 2 0 0 1 5.5 4.5h4l1.7 2H18a2 2 0 0 1 2 2v1" />
+        <circle className="sidebar-action-icon-fill" cx="17" cy="17" r="5" />
+        <path className="sidebar-action-icon-on-fill" d="M17 14v6M14 17h6" />
+      </svg>
+    );
+  }
+
+  if (name === "refresh") {
+    return (
+      <svg className="sidebar-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 8a7 7 0 1 0 1 6" />
+        <path d="M19 4v4h-4" />
+      </svg>
+    );
+  }
+
+  if (name === "settings") {
+    return (
+      <svg className="sidebar-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h6M14 7h6" />
+        <path d="M4 12h10M18 12h2" />
+        <path d="M4 17h3M11 17h9" />
+        <circle cx="12" cy="7" r="2" />
+        <circle cx="16" cy="12" r="2" />
+        <circle cx="9" cy="17" r="2" />
+      </svg>
+    );
+  }
+
+  if (name === "collapse") {
+    return (
+      <svg className="sidebar-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="5" width="16" height="14" rx="3" />
+        <path d="M9 5v14" />
+        <path d="M16 9l-3 3 3 3" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="sidebar-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="14" rx="3" />
+      <path d="M9 5v14" />
+      <path d="M13 9l3 3-3 3" />
+    </svg>
   );
 }
 
@@ -845,9 +1090,15 @@ const defaultSettings: AppSettings = {
   version: 1,
   theme: "dark",
   terminal: {
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontFamily: '"SFMono-Regular", "JetBrains Mono", "MesloLGS NF", "Hack Nerd Font", Menlo, Monaco, Consolas, monospace',
     fontSize: 13,
+    fontWeight: "400",
+    fontWeightBold: "700",
+    lineHeight: 1.15,
+    letterSpacing: 0,
     cursorStyle: "block",
+    minimumContrastRatio: 4.5,
+    drawBoldTextInBrightColors: true,
     backgroundBlur: 0,
     backgroundOpacity: 100,
     autoCopySelection: true,
@@ -870,6 +1121,8 @@ const withSettingsDefaults = (settings: AppSettings): AppSettings => ({
   terminal: {
     ...defaultSettings.terminal,
     ...settings.terminal,
+    fontWeight: normalizeFontWeight(settings.terminal?.fontWeight, defaultSettings.terminal.fontWeight),
+    fontWeightBold: normalizeFontWeight(settings.terminal?.fontWeightBold, defaultSettings.terminal.fontWeightBold),
     colors: {
       ...defaultSettings.terminal.colors,
       ...settings.terminal?.colors,
@@ -905,27 +1158,21 @@ const useSystemTheme = (): "light" | "dark" => {
   return systemTheme;
 };
 
-const hexToRgba = (hex: string, alpha: number): string => {
-  const normalized = hex.trim().replace("#", "");
-  const value =
-    normalized.length === 3
-      ? normalized
-          .split("")
-          .map((digit) => digit + digit)
-          .join("")
-      : normalized;
-
-  if (!/^[0-9a-fA-F]{6}$/.test(value)) {
-    return `rgba(15, 23, 32, ${clamp(alpha, 0, 1)})`;
+const normalizeFontWeight = (value: string | undefined, fallback: string): string => {
+  if (!value) {
+    return fallback;
   }
 
-  const red = Number.parseInt(value.slice(0, 2), 16);
-  const green = Number.parseInt(value.slice(2, 4), 16);
-  const blue = Number.parseInt(value.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${clamp(alpha, 0, 1)})`;
-};
+  if (value === "normal") {
+    return "400";
+  }
 
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+  if (value === "bold") {
+    return "700";
+  }
+
+  return value;
+};
 
 const errorMessage = (caught: unknown): string => {
   if (caught instanceof Error) {

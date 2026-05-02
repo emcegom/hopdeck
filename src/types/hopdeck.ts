@@ -90,7 +90,13 @@ export interface AppSettings {
   terminal: {
     fontFamily: string;
     fontSize: number;
+    fontWeight: string;
+    fontWeightBold: string;
+    lineHeight: number;
+    letterSpacing: number;
     cursorStyle: string;
+    minimumContrastRatio: number;
+    drawBoldTextInBrightColors: boolean;
     backgroundBlur: number;
     backgroundOpacity: number;
     autoCopySelection: boolean;
