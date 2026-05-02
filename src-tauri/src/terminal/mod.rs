@@ -38,6 +38,7 @@ pub struct TerminalManager {
 struct PtySession {
     master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    output: Arc<Mutex<TerminalOutputBuffer>>,
     child: Box<dyn Child + Send + Sync>,
 }
 
@@ -45,6 +46,14 @@ struct PtySession {
 #[serde(rename_all = "camelCase")]
 struct TerminalOutput {
     session_id: String,
+    seq: u64,
+    data: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalOutputChunk {
+    seq: u64,
     data: String,
 }
 
@@ -89,6 +98,7 @@ pub fn start_terminal_session(
     let writer = Arc::new(Mutex::new(
         pair.master.take_writer().map_err(terminal_error)?,
     ));
+    let output = Arc::new(Mutex::new(TerminalOutputBuffer::default()));
     drop(pair.slave);
 
     state
@@ -100,6 +110,7 @@ pub fn start_terminal_session(
             PtySession {
                 master: pair.master,
                 writer: Arc::clone(&writer),
+                output: Arc::clone(&output),
                 child,
             },
         );
@@ -109,6 +120,7 @@ pub fn start_terminal_session(
         session_id.clone(),
         reader,
         writer,
+        output,
         auto_login_passwords,
     );
 
@@ -118,15 +130,11 @@ pub fn start_terminal_session(
         title: host.alias.clone(),
         command: resolved.command,
         status: "running".to_string(),
-        message: if resolved.jumps.is_empty() {
-            None
+        message: Some(if resolved.jumps.is_empty() {
+            format!("Connecting to {}", resolved.target)
         } else {
-            Some(format!(
-                "Via {} to {}",
-                resolved.jumps.join(" -> "),
-                resolved.target
-            ))
-        },
+            format!("Via {} to {}", resolved.jumps.join(" -> "), resolved.target)
+        }),
         created_at: chrono::Utc::now().to_rfc3339(),
     })
 }
@@ -152,6 +160,27 @@ pub fn write_terminal_session(
     writer.write_all(data.as_bytes()).map_err(terminal_error)?;
     writer.flush().map_err(terminal_error)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn read_terminal_session_output(
+    state: State<'_, TerminalManager>,
+    session_id: String,
+    after_seq: Option<u64>,
+) -> Result<Vec<TerminalOutputChunk>> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| HopdeckError::Terminal("terminal session registry is poisoned".to_string()))?;
+    let session = sessions.get(&session_id).ok_or_else(|| {
+        HopdeckError::InvalidRequest(format!("terminal session not found: {session_id}"))
+    })?;
+    let output = session
+        .output
+        .lock()
+        .map_err(|_| HopdeckError::Terminal("terminal output buffer is poisoned".to_string()))?;
+
+    Ok(output.chunks_after(after_seq.unwrap_or(0)))
 }
 
 #[tauri::command]
@@ -200,6 +229,7 @@ fn spawn_output_reader(
     session_id: String,
     mut reader: Box<dyn Read + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    output: Arc<Mutex<TerminalOutputBuffer>>,
     auto_login_passwords: Vec<String>,
 ) {
     thread::spawn(move || {
@@ -211,27 +241,34 @@ fn spawn_output_reader(
                 Ok(0) => break,
                 Ok(size) => {
                     let data = String::from_utf8_lossy(&buffer[..size]).to_string();
-                    if let Some(password_input) = auto_login.password_input_for_prompt(&data) {
-                        if let Ok(mut writer) = writer.lock() {
-                            let _ = writer.write_all(password_input.as_bytes());
-                            let _ = writer.flush();
-                        }
-                    }
+                    let seq = remember_terminal_output(&output, &data);
+                    let auto_input = auto_login.input_for_prompt(&data);
 
                     let _ = app.emit(
                         "terminal-output",
                         TerminalOutput {
                             session_id: session_id.clone(),
+                            seq,
                             data,
                         },
                     );
+
+                    if let Some(input) = auto_input {
+                        if let Ok(mut writer) = writer.lock() {
+                            let _ = writer.write_all(input.as_bytes());
+                            let _ = writer.flush();
+                        }
+                    }
                 }
                 Err(error) => {
+                    let data = format!("\r\n[hopdeck] terminal read error: {error}\r\n");
+                    let seq = remember_terminal_output(&output, &data);
                     let _ = app.emit(
                         "terminal-output",
                         TerminalOutput {
                             session_id: session_id.clone(),
-                            data: format!("\r\n[hopdeck] terminal read error: {error}\r\n"),
+                            seq,
+                            data,
                         },
                     );
                     break;
@@ -241,6 +278,48 @@ fn spawn_output_reader(
 
         let _ = app.emit("terminal-exit", TerminalExit { session_id });
     });
+}
+
+#[derive(Default)]
+struct TerminalOutputBuffer {
+    next_seq: u64,
+    chunks: VecDeque<TerminalOutputChunk>,
+    bytes: usize,
+}
+
+impl TerminalOutputBuffer {
+    fn push(&mut self, data: String) -> u64 {
+        const MAX_OUTPUT_BYTES: usize = 64 * 1024;
+
+        self.next_seq += 1;
+        let seq = self.next_seq;
+        self.bytes += data.len();
+        self.chunks.push_back(TerminalOutputChunk { seq, data });
+
+        while self.bytes > MAX_OUTPUT_BYTES {
+            let Some(chunk) = self.chunks.pop_front() else {
+                break;
+            };
+            self.bytes = self.bytes.saturating_sub(chunk.data.len());
+        }
+
+        seq
+    }
+
+    fn chunks_after(&self, after_seq: u64) -> Vec<TerminalOutputChunk> {
+        self.chunks
+            .iter()
+            .filter(|chunk| chunk.seq > after_seq)
+            .cloned()
+            .collect()
+    }
+}
+
+fn remember_terminal_output(output: &Arc<Mutex<TerminalOutputBuffer>>, data: &str) -> u64 {
+    match output.lock() {
+        Ok(mut output) => output.push(data.to_string()),
+        Err(_) => 0,
+    }
 }
 
 fn terminal_error(error: impl ToString) -> HopdeckError {
@@ -293,19 +372,15 @@ impl AutoLogin {
         }
     }
 
-    fn password_input_for_prompt(&mut self, data: &str) -> Option<String> {
-        if self.passwords.is_empty() {
-            return None;
-        }
-
-        if self.detector.push_and_detect(data) {
-            return self
+    fn input_for_prompt(&mut self, data: &str) -> Option<String> {
+        match self.detector.push_and_detect(data) {
+            Some(PromptKind::HostKeyConfirmation) => Some("yes\n".to_string()),
+            Some(PromptKind::Password) => self
                 .passwords
                 .pop_front()
-                .map(|password| format!("{password}\n"));
+                .map(|password| format!("{password}\n")),
+            None => None,
         }
-
-        None
     }
 }
 
@@ -314,8 +389,13 @@ struct PromptDetector {
     recent: String,
 }
 
+enum PromptKind {
+    HostKeyConfirmation,
+    Password,
+}
+
 impl PromptDetector {
-    fn push_and_detect(&mut self, data: &str) -> bool {
+    fn push_and_detect(&mut self, data: &str) -> Option<PromptKind> {
         self.recent.push_str(data);
         if self.recent.len() > 512 {
             self.recent = self
@@ -329,8 +409,28 @@ impl PromptDetector {
                 .collect();
         }
 
-        is_password_prompt(&self.recent)
+        if is_host_key_confirmation_prompt(&self.recent) {
+            self.recent.clear();
+            return Some(PromptKind::HostKeyConfirmation);
+        }
+
+        if is_password_prompt(&self.recent) {
+            self.recent.clear();
+            return Some(PromptKind::Password);
+        }
+
+        None
     }
+}
+
+fn is_host_key_confirmation_prompt(value: &str) -> bool {
+    let normalized = strip_ansi(value).to_ascii_lowercase();
+    let prompt_tail = normalized.trim_end();
+
+    prompt_tail.contains("are you sure you want to continue connecting")
+        && prompt_tail.contains("yes/no")
+        && !prompt_tail.contains('\n')
+        && !prompt_tail.contains('\r')
 }
 
 fn is_password_prompt(value: &str) -> bool {
@@ -370,29 +470,51 @@ fn strip_ansi(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AutoLogin, PromptDetector};
+    use super::{AutoLogin, PromptDetector, PromptKind, TerminalOutputBuffer};
 
     #[test]
     fn detects_password_prompt_across_chunks() {
         let mut detector = PromptDetector::default();
 
-        assert!(!detector.push_and_detect("app@host's pass"));
-        assert!(detector.push_and_detect("word:"));
+        assert!(detector.push_and_detect("app@host's pass").is_none());
+        assert!(matches!(
+            detector.push_and_detect("word:"),
+            Some(PromptKind::Password)
+        ));
     }
 
     #[test]
     fn detects_key_passphrase_prompt() {
         let mut detector = PromptDetector::default();
 
-        assert!(detector.push_and_detect("Enter passphrase for key '/Users/zane/.ssh/id_ed25519':"));
+        assert!(matches!(
+            detector.push_and_detect("Enter passphrase for key '/Users/zane/.ssh/id_ed25519':"),
+            Some(PromptKind::Password)
+        ));
     }
 
     #[test]
     fn ignores_non_prompt_password_text() {
         let mut detector = PromptDetector::default();
 
-        assert!(!detector.push_and_detect("Permission denied, please try again.\r\n"));
-        assert!(!detector.push_and_detect("Password authentication failed\r\n"));
+        assert!(detector
+            .push_and_detect("Permission denied, please try again.\r\n")
+            .is_none());
+        assert!(detector
+            .push_and_detect("Password authentication failed\r\n")
+            .is_none());
+    }
+
+    #[test]
+    fn detects_host_key_confirmation_prompt() {
+        let mut detector = PromptDetector::default();
+
+        assert!(matches!(
+            detector.push_and_detect(
+                "Are you sure you want to continue connecting (yes/no/[fingerprint])?"
+            ),
+            Some(PromptKind::HostKeyConfirmation)
+        ));
     }
 
     #[test]
@@ -400,10 +522,10 @@ mod tests {
         let mut auto_login = AutoLogin::new(vec!["secret".to_string()]);
 
         assert_eq!(
-            auto_login.password_input_for_prompt("Password:"),
+            auto_login.input_for_prompt("Password:"),
             Some("secret\n".to_string())
         );
-        assert_eq!(auto_login.password_input_for_prompt("Password:"), None);
+        assert_eq!(auto_login.input_for_prompt("Password:"), None);
     }
 
     #[test]
@@ -412,16 +534,45 @@ mod tests {
             AutoLogin::new(vec!["jump-secret".to_string(), "target-secret".to_string()]);
 
         assert_eq!(
-            auto_login.password_input_for_prompt("hop@127.0.0.1's password:"),
+            auto_login.input_for_prompt("hop@127.0.0.1's password:"),
             Some("jump-secret\n".to_string())
         );
         assert_eq!(
-            auto_login.password_input_for_prompt("\r\nhop@target's password:"),
+            auto_login.input_for_prompt("\r\nhop@target's password:"),
             Some("target-secret\n".to_string())
         );
         assert_eq!(
-            auto_login.password_input_for_prompt("\r\nhop@target's password:"),
+            auto_login.input_for_prompt("\r\nhop@target's password:"),
             None
         );
+    }
+
+    #[test]
+    fn auto_login_confirms_new_host_key_before_passwords() {
+        let mut auto_login = AutoLogin::new(vec!["secret".to_string()]);
+
+        assert_eq!(
+            auto_login.input_for_prompt(
+                "Are you sure you want to continue connecting (yes/no/[fingerprint])?"
+            ),
+            Some("yes\n".to_string())
+        );
+        assert_eq!(
+            auto_login.input_for_prompt("hop@host's password:"),
+            Some("secret\n".to_string())
+        );
+    }
+
+    #[test]
+    fn output_buffer_replays_chunks_after_sequence() {
+        let mut buffer = TerminalOutputBuffer::default();
+
+        assert_eq!(buffer.push("first".to_string()), 1);
+        assert_eq!(buffer.push("second".to_string()), 2);
+
+        let chunks = buffer.chunks_after(1);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].seq, 2);
+        assert_eq!(chunks[0].data, "second");
     }
 }

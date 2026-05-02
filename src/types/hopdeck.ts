@@ -60,6 +60,12 @@ export interface TerminalSession {
 
 export interface TerminalOutputEvent {
   sessionId: string;
+  seq: number;
+  data: string;
+}
+
+export interface TerminalOutputChunk {
+  seq: number;
   data: string;
 }
 
@@ -87,6 +93,7 @@ export interface AppSettings {
     cursorStyle: string;
     backgroundBlur: number;
     backgroundOpacity: number;
+    autoCopySelection: boolean;
     colors: {
       background: string;
       foreground: string;

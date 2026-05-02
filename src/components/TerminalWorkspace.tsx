@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 
@@ -9,6 +10,7 @@ import {
   type AppSettings,
   type Host,
   type TerminalExitEvent,
+  type TerminalOutputChunk,
   type TerminalOutputEvent,
   type TerminalSession
 } from "../types/hopdeck";
@@ -20,6 +22,7 @@ interface TerminalWorkspaceProps {
   settings: AppSettings;
   onCloseSession: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
+  onSessionExit: (sessionId: string) => void;
 }
 
 export function TerminalWorkspace({
@@ -28,7 +31,8 @@ export function TerminalWorkspace({
   selectedHost,
   settings,
   onCloseSession,
-  onSelectSession
+  onSelectSession,
+  onSessionExit
 }: TerminalWorkspaceProps) {
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null;
 
@@ -71,6 +75,7 @@ export function TerminalWorkspace({
               key={session.id}
               settings={settings}
               session={session}
+              onSessionExit={onSessionExit}
             />
           ))
         ) : (
@@ -88,12 +93,14 @@ interface TerminalPaneProps {
   session: TerminalSession;
   isActive: boolean;
   settings: AppSettings;
+  onSessionExit: (sessionId: string) => void;
 }
 
-function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
+function TerminalPane({ session, isActive, settings, onSessionExit }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const lastSeqRef = useRef(0);
   const themeKey = terminalThemeKey(settings);
 
   useEffect(() => {
@@ -120,9 +127,54 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
       terminal.write(`\x1b[90m${session.message}\x1b[0m\r\n`);
     }
 
+    const writeOutputChunk = (chunk: TerminalOutputChunk) => {
+      if (chunk.seq <= lastSeqRef.current) {
+        return;
+      }
+
+      lastSeqRef.current = chunk.seq;
+      terminal.write(chunk.data);
+    };
+
     const dataDisposable = terminal.onData((data) => {
-      void invoke("write_terminal_session", { sessionId: session.id, data });
+      void invoke("write_terminal_session", { sessionId: session.id, data }).catch((caught) => {
+        terminal.write(`\r\n\x1b[31m[hopdeck] input failed: ${String(caught)}\x1b[0m\r\n`);
+      });
     });
+    let autoCopyTimer: number | null = null;
+    let lastCopiedSelection = "";
+    let reportedAutoCopyError = false;
+    const scheduleAutoCopySelection = () => {
+      if (autoCopyTimer !== null) {
+        window.clearTimeout(autoCopyTimer);
+      }
+
+      autoCopyTimer = window.setTimeout(() => {
+        autoCopyTimer = null;
+        const selectedText = terminal.getSelection();
+
+        if (!selectedText || selectedText === lastCopiedSelection) {
+          return;
+        }
+
+        lastCopiedSelection = selectedText;
+        void copyTextToClipboard(selectedText).catch((caught) => {
+          if (!reportedAutoCopyError) {
+            reportedAutoCopyError = true;
+            terminal.write(`\r\n\x1b[31m[hopdeck] auto-copy failed: ${String(caught)}\x1b[0m\r\n`);
+          }
+        });
+      }, 150);
+    };
+    const autoCopyDisposable = settings.terminal.autoCopySelection
+      ? terminal.onSelectionChange(scheduleAutoCopySelection)
+      : null;
+    const autoCopyPointerHandler = settings.terminal.autoCopySelection ? scheduleAutoCopySelection : null;
+
+    if (autoCopyPointerHandler) {
+      container.addEventListener("mouseup", autoCopyPointerHandler);
+      container.addEventListener("touchend", autoCopyPointerHandler);
+    }
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -133,27 +185,49 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
 
     void listen<TerminalOutputEvent>("terminal-output", (event) => {
       if (event.payload.sessionId === session.id) {
-        terminal.write(event.payload.data);
+        writeOutputChunk(event.payload);
       }
-    }).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-      } else {
-        outputUnlisten = unlisten;
-      }
-    });
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          outputUnlisten = unlisten;
+        }
+      })
+      .catch((caught) => {
+        terminal.write(`\r\n\x1b[31m[hopdeck] output listener failed: ${String(caught)}\x1b[0m\r\n`);
+      });
+
+    void invoke<TerminalOutputChunk[]>("read_terminal_session_output", {
+      sessionId: session.id,
+      afterSeq: lastSeqRef.current
+    })
+      .then((chunks) => {
+        if (!disposed) {
+          chunks.forEach(writeOutputChunk);
+        }
+      })
+      .catch((caught) => {
+        terminal.write(`\r\n\x1b[31m[hopdeck] output replay failed: ${String(caught)}\x1b[0m\r\n`);
+      });
 
     void listen<TerminalExitEvent>("terminal-exit", (event) => {
       if (event.payload.sessionId === session.id) {
         terminal.write("\r\n\x1b[90m[hopdeck] session closed\x1b[0m\r\n");
+        onSessionExit(session.id);
       }
-    }).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-      } else {
-        exitUnlisten = unlisten;
-      }
-    });
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          exitUnlisten = unlisten;
+        }
+      })
+      .catch((caught) => {
+        terminal.write(`\r\n\x1b[31m[hopdeck] exit listener failed: ${String(caught)}\x1b[0m\r\n`);
+      });
 
     const resize = () => {
       try {
@@ -176,14 +250,30 @@ function TerminalPane({ session, isActive, settings }: TerminalPaneProps) {
       disposed = true;
       outputUnlisten?.();
       exitUnlisten?.();
+      autoCopyDisposable?.dispose();
+      if (autoCopyPointerHandler) {
+        container.removeEventListener("mouseup", autoCopyPointerHandler);
+        container.removeEventListener("touchend", autoCopyPointerHandler);
+      }
+      if (autoCopyTimer !== null) {
+        window.clearTimeout(autoCopyTimer);
+      }
       resizeObserver.disconnect();
       dataDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
-      void invoke("close_terminal_session", { sessionId: session.id });
     };
-  }, [session, settings.terminal.fontFamily, settings.terminal.fontSize, themeKey]);
+  }, [
+    session.id,
+    session.command,
+    session.message,
+    settings.terminal.autoCopySelection,
+    settings.terminal.fontFamily,
+    settings.terminal.fontSize,
+    themeKey,
+    onSessionExit
+  ]);
 
   useEffect(() => {
     if (!isActive) {
@@ -246,6 +336,24 @@ const terminalThemeKey = (settings: AppSettings): string =>
     settings.terminal.colors.selection,
     ...normalizeAnsi(settings.terminal.colors.ansi)
   ].join("|");
+
+const copyTextToClipboard = async (text: string): Promise<void> => {
+  try {
+    await writeClipboardText(text);
+    return;
+  } catch (pluginError) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {
+        // Report the plugin error because it is the expected packaged-app path.
+      }
+    }
+
+    throw pluginError;
+  }
+};
 
 const normalizeAnsi = (colors: string[]): string[] =>
   colors.length === 16

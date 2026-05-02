@@ -11,14 +11,84 @@
   --muted-strong: #adbdcd;
   --accent: #41b6c8;
   --accent-strong: #2e8aa1;
+  --accent-contrast: #0f1720;
   --danger: #ef8a80;
+  --control-hover: #243448;
+  --danger-bg: rgba(239, 138, 128, 0.1);
+  --danger-border: rgba(239, 138, 128, 0.55);
+  --danger-text: #ffd5cf;
+  --danger-muted: #ffb8b0;
+  --highlight-bg: rgba(229, 193, 93, 0.36);
+  --hover-soft: rgba(65, 182, 200, 0.08);
+  --selected-soft: rgba(65, 182, 200, 0.16);
+  --focus-ring: rgba(65, 182, 200, 0.16);
+  --menu-shadow: rgba(0, 0, 0, 0.3);
+  --modal-backdrop: rgba(8, 13, 19, 0.58);
+  --overlay-hover: rgba(255, 255, 255, 0.08);
+  --preview-border: rgba(255, 255, 255, 0.12);
+  --section-bg: rgba(28, 42, 57, 0.45);
+  --sidebar-edge: rgba(255, 255, 255, 0.03);
+  --skeleton-start: #172331;
+  --skeleton-mid: #1d2b3a;
+  --terminal-tab-active: #24384a;
+  --workspace-bottom: #0b131c;
+  --workspace-grid-a: rgba(255, 255, 255, 0.08);
+  --workspace-grid-b: rgba(65, 182, 200, 0.1);
+  --workspace-glow-a: rgba(65, 182, 200, 0.32);
+  --workspace-glow-b: rgba(126, 99, 210, 0.3);
+  --workspace-wash-a: rgba(126, 99, 210, 0.22);
+  --workspace-wash-b: rgba(229, 193, 93, 0.12);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
   background: var(--bg);
+  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+.app-shell[data-theme="light"] {
+  --bg: #f6f8fb;
+  --panel: #ffffff;
+  --panel-raised: #ffffff;
+  --panel-soft: #edf3f8;
+  --border: #d7e0ea;
+  --border-strong: #c4d1df;
+  --text: #27384a;
+  --text-strong: #102033;
+  --muted: #667789;
+  --muted-strong: #4a5d70;
+  --accent: #168aa0;
+  --accent-strong: #0f6e85;
+  --accent-contrast: #ffffff;
+  --danger: #c94f44;
+  --control-hover: #e4edf5;
+  --danger-bg: rgba(201, 79, 68, 0.1);
+  --danger-border: rgba(201, 79, 68, 0.42);
+  --danger-text: #7d241f;
+  --danger-muted: #9e352e;
+  --highlight-bg: rgba(232, 178, 61, 0.42);
+  --hover-soft: rgba(22, 138, 160, 0.1);
+  --selected-soft: rgba(22, 138, 160, 0.18);
+  --focus-ring: rgba(22, 138, 160, 0.18);
+  --menu-shadow: rgba(18, 32, 50, 0.16);
+  --modal-backdrop: rgba(18, 30, 45, 0.22);
+  --overlay-hover: rgba(22, 32, 46, 0.08);
+  --preview-border: rgba(18, 32, 50, 0.12);
+  --section-bg: rgba(245, 248, 252, 0.92);
+  --sidebar-edge: rgba(18, 32, 50, 0.04);
+  --skeleton-start: #e8eef5;
+  --skeleton-mid: #f5f8fb;
+  --terminal-tab-active: #d8e8f0;
+  --workspace-bottom: #eef4f8;
+  --workspace-grid-a: rgba(30, 54, 80, 0.08);
+  --workspace-grid-b: rgba(22, 138, 160, 0.1);
+  --workspace-glow-a: rgba(22, 138, 160, 0.2);
+  --workspace-glow-b: rgba(80, 105, 165, 0.16);
+  --workspace-wash-a: rgba(72, 105, 170, 0.14);
+  --workspace-wash-b: rgba(229, 171, 58, 0.12);
+  color-scheme: light;
 }
 
 * {
@@ -55,7 +125,7 @@ code {
   padding: 18px 12px;
   border-right: 1px solid var(--border);
   background: var(--panel);
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.03);
+  box-shadow: inset -1px 0 0 var(--sidebar-edge);
 }
 
 .sidebar-header {
@@ -111,7 +181,7 @@ code {
 
 .icon-button:hover {
   color: var(--text-strong);
-  background: #243448;
+  background: var(--control-hover);
 }
 
 .reload-icon {
@@ -202,14 +272,14 @@ code {
   display: grid;
   gap: 5px;
   padding: 12px;
-  border: 1px solid rgba(239, 138, 128, 0.55);
+  border: 1px solid var(--danger-border);
   border-radius: 8px;
-  color: #ffd5cf;
-  background: rgba(239, 138, 128, 0.1);
+  color: var(--danger-text);
+  background: var(--danger-bg);
 }
 
 .load-error span {
-  color: #ffb8b0;
+  color: var(--danger-muted);
   font-size: 13px;
 }
 
@@ -228,7 +298,7 @@ code {
 
 .sidebar-search:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(65, 182, 200, 0.12);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .sidebar-search input {
@@ -272,7 +342,7 @@ code {
 .loading-list span {
   height: 34px;
   border-radius: 8px;
-  background: linear-gradient(90deg, #172331, #1d2b3a, #172331);
+  background: linear-gradient(90deg, var(--skeleton-start), var(--skeleton-mid), var(--skeleton-start));
 }
 
 .tree-navigator {
@@ -301,12 +371,12 @@ code {
 }
 
 .tree-row:focus-visible {
-  outline: 2px solid rgba(65, 182, 200, 0.62);
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
   outline-offset: 1px;
 }
 
 .tree-row:hover {
-  background: rgba(65, 182, 200, 0.08);
+  background: var(--hover-soft);
 }
 
 .tree-row[draggable="true"]:active {
@@ -315,7 +385,7 @@ code {
 
 .tree-row.is-selected {
   color: var(--text-strong);
-  background: rgba(65, 182, 200, 0.16);
+  background: var(--selected-soft);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -331,7 +401,7 @@ code {
   padding: 0 1px;
   border-radius: 3px;
   color: var(--text-strong);
-  background: rgba(229, 193, 93, 0.36);
+  background: var(--highlight-bg);
 }
 
 .tree-disclosure {
@@ -446,7 +516,7 @@ code {
 .tree-row:focus-within .tree-row-menu,
 .tree-row-menu:hover {
   color: var(--text-strong);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--overlay-hover);
   opacity: 1;
 }
 
@@ -475,7 +545,7 @@ code {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: var(--panel-raised);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 18px 48px var(--menu-shadow);
 }
 
 .tree-context-item {
@@ -492,15 +562,15 @@ code {
 
 .tree-context-item:hover {
   color: var(--text-strong);
-  background: rgba(65, 182, 200, 0.12);
+  background: var(--hover-soft);
 }
 
 .tree-context-item.danger {
-  color: #ffb8b0;
+  color: var(--danger-muted);
 }
 
 .tree-context-item.danger:hover {
-  background: rgba(239, 138, 128, 0.13);
+  background: var(--danger-bg);
 }
 
 .workspace {
@@ -512,19 +582,19 @@ code {
   overflow: hidden;
   background:
     radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--terminal-accent, #41b6c8) 26%, transparent), transparent 16%),
-    radial-gradient(circle at 72% 34%, rgba(126, 99, 210, 0.22), transparent 18%),
-    radial-gradient(circle at 88% 76%, rgba(229, 193, 93, 0.12), transparent 20%),
-    linear-gradient(180deg, var(--terminal-bg, #0f1720), #0b131c);
+    radial-gradient(circle at 72% 34%, var(--workspace-wash-a), transparent 18%),
+    radial-gradient(circle at 88% 76%, var(--workspace-wash-b), transparent 20%),
+    linear-gradient(180deg, var(--terminal-bg, #0f1720), var(--workspace-bottom));
 }
 
 .workspace::before {
   position: absolute;
   inset: -26px;
   background:
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 2px, transparent 2px 34px),
-    repeating-linear-gradient(135deg, rgba(65, 182, 200, 0.1) 0 1px, transparent 1px 56px),
-    radial-gradient(circle at 28% 34%, rgba(65, 182, 200, 0.32), transparent 20%),
-    radial-gradient(circle at 76% 60%, rgba(126, 99, 210, 0.3), transparent 22%);
+    repeating-linear-gradient(45deg, var(--workspace-grid-a) 0 2px, transparent 2px 34px),
+    repeating-linear-gradient(135deg, var(--workspace-grid-b) 0 1px, transparent 1px 56px),
+    radial-gradient(circle at 28% 34%, var(--workspace-glow-a), transparent 20%),
+    radial-gradient(circle at 76% 60%, var(--workspace-glow-b), transparent 22%);
   content: "";
   filter: blur(var(--terminal-blur, 0));
   opacity: 0.5;
@@ -594,7 +664,7 @@ code {
   min-height: 38px;
   padding: 9px 16px;
   border-radius: 8px;
-  color: var(--bg);
+  color: var(--accent-contrast);
   font-weight: 700;
   background: var(--accent);
 }
@@ -640,7 +710,7 @@ code {
 .tag {
   padding: 5px 9px;
   border-radius: 999px;
-  color: var(--bg);
+  color: var(--accent-contrast);
   font-size: 13px;
   font-weight: 700;
   background: var(--accent);
@@ -750,7 +820,7 @@ code {
 
 .terminal-tab.is-active {
   color: var(--text-strong);
-  background: #24384a;
+  background: var(--terminal-tab-active);
 }
 
 .terminal-tab-close {
@@ -768,7 +838,7 @@ code {
 
 .terminal-tab-close:hover {
   color: var(--text-strong);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--overlay-hover);
 }
 
 .status-dot {
@@ -803,6 +873,7 @@ code {
   display: none;
   min-width: 0;
   min-height: 0;
+  width: 100%;
   height: 100%;
   padding: 12px 14px;
   background: transparent;
@@ -813,6 +884,7 @@ code {
 }
 
 .terminal-pane .xterm {
+  width: 100%;
   height: 100%;
   background: transparent;
 }
@@ -844,7 +916,7 @@ code {
   display: grid;
   place-items: center;
   padding: 28px;
-  background: rgba(8, 13, 19, 0.58);
+  background: var(--modal-backdrop);
   backdrop-filter: blur(10px);
   z-index: 20;
 }
@@ -933,7 +1005,7 @@ code {
 .field select:focus,
 .field textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(65, 182, 200, 0.16);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .field textarea {
@@ -948,7 +1020,7 @@ code {
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(28, 42, 57, 0.45);
+  background: var(--section-bg);
 }
 
 .password-field {
@@ -984,7 +1056,7 @@ code {
 
 .theme-preview span {
   min-height: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--preview-border);
   border-radius: 5px;
 }
 
@@ -1022,16 +1094,16 @@ code {
 
 .form-error {
   padding: 10px 12px;
-  border: 1px solid rgba(239, 138, 128, 0.55);
+  border: 1px solid var(--danger-border);
   border-radius: 8px;
-  color: #ffd5cf;
-  background: rgba(239, 138, 128, 0.1);
+  color: var(--danger-text);
+  background: var(--danger-bg);
 }
 
 .form-error.neutral {
-  border-color: rgba(65, 182, 200, 0.45);
-  color: #bdeef5;
-  background: rgba(65, 182, 200, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  background: var(--hover-soft);
 }
 
 .secondary-action {
@@ -1057,14 +1129,14 @@ code {
   padding: 9px 16px;
   border: 0;
   border-radius: 8px;
-  color: #ffd5cf;
+  color: var(--danger-text);
   font-weight: 700;
-  background: rgba(239, 138, 128, 0.13);
+  background: var(--danger-bg);
   cursor: pointer;
 }
 
 .danger-action:hover {
-  background: rgba(239, 138, 128, 0.2);
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .primary-action:disabled {

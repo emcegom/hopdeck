@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions needed by the main Hopdeck window.",
+  "windows": ["main"],
+  "permissions": ["core:event:default", "clipboard-manager:allow-write-text"]
+}

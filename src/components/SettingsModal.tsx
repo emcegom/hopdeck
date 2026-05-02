@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { isBuiltInTerminalColors, terminalColorsForAppearance } from "../theme";
 import type { AppSettings } from "../types/hopdeck";
 
 interface SettingsModalProps {
@@ -55,6 +56,32 @@ export function SettingsModal({
     }
   };
 
+  const updateAppearance = (theme: AppSettings["theme"]) => {
+    setDraft((current) => {
+      const effectiveTheme = theme === "system" ? current.theme === "light" ? "light" : "dark" : theme;
+      const shouldFollowTheme = isBuiltInTerminalColors(current.terminal.colors);
+
+      return {
+        ...current,
+        theme,
+        terminal: {
+          ...current.terminal,
+          colors: shouldFollowTheme ? terminalColorsForAppearance(effectiveTheme) : current.terminal.colors
+        }
+      };
+    });
+  };
+
+  const applyTerminalPalette = (theme: Exclude<AppSettings["theme"], "system">) => {
+    setDraft((current) => ({
+      ...current,
+      terminal: {
+        ...current.terminal,
+        colors: terminalColorsForAppearance(theme)
+      }
+    }));
+  };
+
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
@@ -72,6 +99,26 @@ export function SettingsModal({
             x
           </button>
         </header>
+
+        <div className="settings-section">
+          <h3>Appearance</h3>
+          <label className="field">
+            <span>Theme</span>
+            <select value={draft.theme} onChange={(event) => updateAppearance(event.target.value as AppSettings["theme"])}>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="system">System</option>
+            </select>
+          </label>
+          <div className="settings-actions">
+            <button className="secondary-action" type="button" onClick={() => applyTerminalPalette("light")}>
+              Light terminal colors
+            </button>
+            <button className="secondary-action" type="button" onClick={() => applyTerminalPalette("dark")}>
+              Dark terminal colors
+            </button>
+          </div>
+        </div>
 
         <div className="settings-section">
           <h3>Terminal</h3>
@@ -117,6 +164,19 @@ export function SettingsModal({
                 }))
               }
             />
+          </label>
+          <label className="check-row">
+            <input
+              checked={draft.terminal.autoCopySelection}
+              type="checkbox"
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  terminal: { ...current.terminal, autoCopySelection: event.target.checked }
+                }))
+              }
+            />
+            <span>Copy selection automatically</span>
           </label>
           <div className="theme-preview" aria-label="Terminal colors preview">
             {draft.terminal.colors.ansi.slice(0, 16).map((color, index) => (

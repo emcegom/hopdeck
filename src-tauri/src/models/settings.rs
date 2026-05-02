@@ -44,6 +44,8 @@ pub struct TerminalSettings {
     pub background_blur: u16,
     #[serde(default = "default_background_opacity")]
     pub background_opacity: u8,
+    #[serde(default = "default_auto_copy_selection")]
+    pub auto_copy_selection: bool,
     #[serde(default)]
     pub colors: TerminalColors,
 }
@@ -56,6 +58,7 @@ impl Default for TerminalSettings {
             cursor_style: default_cursor_style(),
             background_blur: 0,
             background_opacity: default_background_opacity(),
+            auto_copy_selection: default_auto_copy_selection(),
             colors: TerminalColors::default(),
         }
     }
@@ -157,6 +160,10 @@ fn default_cursor_style() -> String {
 
 fn default_background_opacity() -> u8 {
     100
+}
+
+fn default_auto_copy_selection() -> bool {
+    true
 }
 
 fn default_terminal_background() -> String {

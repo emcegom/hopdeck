@@ -6,6 +6,7 @@ import { HostEditorModal } from "./components/HostEditorModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import { TreeNavigator, type TreeDragSource } from "./components/TreeNavigator";
+import { darkTerminalColors } from "./theme";
 import type { AppSettings, Host, HostDocument, TerminalSession, TreeNode, VaultDocument } from "./types/hopdeck";
 
 type HostEditorState =
@@ -41,6 +42,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const systemTheme = useSystemTheme();
+  const effectiveTheme = settings.theme === "system" ? systemTheme : settings.theme;
 
   const selectedHost = selectedHostId && document ? document.hosts[selectedHostId] ?? null : null;
 
@@ -111,12 +114,22 @@ function App() {
 
       try {
         const session = await invoke<TerminalSession>("start_terminal_session", { hostId });
-        setSessions((current) => [session, ...current.filter((item) => item.hostId !== hostId)]);
+        setSessions((current) => {
+          current
+            .filter((item) => item.hostId === hostId)
+            .forEach((item) => closeBackendSession(item.id));
+          return [session, ...current.filter((item) => item.hostId !== hostId)];
+        });
         setActiveSessionId(session.id);
       } catch (caught) {
         const message = errorMessage(caught);
         const session = createSession(host, fallbackCommand(host), "error", message);
-        setSessions((current) => [session, ...current.filter((item) => item.hostId !== hostId)]);
+        setSessions((current) => {
+          current
+            .filter((item) => item.hostId === hostId)
+            .forEach((item) => closeBackendSession(item.id));
+          return [session, ...current.filter((item) => item.hostId !== hostId)];
+        });
         setActiveSessionId(session.id);
       }
     },
@@ -139,6 +152,9 @@ function App() {
       setDocument(nextDocument);
       setSessions((current) => {
         const nextSessions = current.filter((session) => session.hostId !== hostId);
+        current
+          .filter((session) => session.hostId === hostId)
+          .forEach((session) => closeBackendSession(session.id));
         setActiveSessionId((currentActiveSessionId) =>
           nextSessions.some((session) => session.id === currentActiveSessionId)
             ? currentActiveSessionId
@@ -241,6 +257,9 @@ function App() {
       setExpandedNodeIds(new Set(collectExpandedFolderIds(nextDocument.tree)));
       setSessions((current) => {
         const nextSessions = current.filter((session) => !deletedHostIds.has(session.hostId));
+        current
+          .filter((session) => deletedHostIds.has(session.hostId))
+          .forEach((session) => closeBackendSession(session.id));
         setActiveSessionId((currentActiveSessionId) =>
           nextSessions.some((session) => session.id === currentActiveSessionId)
             ? currentActiveSessionId
@@ -306,6 +325,7 @@ function App() {
   );
 
   const closeSession = useCallback((sessionId: string) => {
+    closeBackendSession(sessionId);
     setSessions((current) => {
       const nextSessions = current.filter((session) => session.id !== sessionId);
 
@@ -321,6 +341,14 @@ function App() {
     });
   }, []);
 
+  const markSessionClosed = useCallback((sessionId: string) => {
+    setSessions((current) =>
+      current.map((session) =>
+        session.id === sessionId ? { ...session, status: "closed" } : session
+      )
+    );
+  }, []);
+
   const importIterm2Theme = useCallback(async () => {
     const nextSettings = await invoke<AppSettings>("import_iterm2_theme");
     setSettings(withSettingsDefaults(nextSettings));
@@ -334,7 +362,7 @@ function App() {
   } as CSSProperties;
 
   return (
-    <main className="app-shell" style={appShellStyle}>
+    <main className="app-shell" data-theme={effectiveTheme} style={appShellStyle}>
       <aside className="sidebar">
         <header className="sidebar-header">
           <div>
@@ -432,6 +460,7 @@ function App() {
           settings={settings}
           onCloseSession={closeSession}
           onSelectSession={(sessionId) => setActiveSessionId(sessionId)}
+          onSessionExit={markSessionClosed}
         />
       </section>
 
@@ -728,6 +757,12 @@ const fallbackCommand = (host: Host): string => {
   return `ssh -p ${host.port} ${userPrefix}${host.host}`;
 };
 
+const closeBackendSession = (sessionId: string) => {
+  void invoke("close_terminal_session", { sessionId }).catch(() => {
+    // Error sessions and already-exited PTYs may not exist in the backend registry.
+  });
+};
+
 const createDefaultHost = (hosts: Record<string, Host>): Host => {
   const id = nextHostId(hosts);
 
@@ -815,30 +850,8 @@ const defaultSettings: AppSettings = {
     cursorStyle: "block",
     backgroundBlur: 0,
     backgroundOpacity: 100,
-    colors: {
-      background: "#0F1720",
-      foreground: "#DBE7F3",
-      cursor: "#41B6C8",
-      selection: "#24384A",
-      ansi: [
-        "#172331",
-        "#EF8A80",
-        "#7FD19B",
-        "#E5C15D",
-        "#69A7E8",
-        "#B99CFF",
-        "#41B6C8",
-        "#DBE7F3",
-        "#8EA0B4",
-        "#FFB8B0",
-        "#A6E3B6",
-        "#F4D675",
-        "#9BC7FF",
-        "#CFB8FF",
-        "#75D7E4",
-        "#F3F7FB"
-      ]
-    }
+    autoCopySelection: true,
+    colors: darkTerminalColors
   },
   vault: {
     mode: "plain",
@@ -875,6 +888,22 @@ const withSettingsDefaults = (settings: AppSettings): AppSettings => ({
     ...settings.connection
   }
 });
+
+const useSystemTheme = (): "light" | "dark" => {
+  const getSystemTheme = () =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const handleChange = () => setSystemTheme(getSystemTheme());
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  return systemTheme;
+};
 
 const hexToRgba = (hex: string, alpha: number): string => {
   const normalized = hex.trim().replace("#", "");
