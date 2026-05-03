@@ -48,7 +48,13 @@ await MainActor.run {
     let closePlan = manager.closeActiveSession()
     expect(closePlan?.closedSessionID == first.id, "close should target the active session")
     expect(closePlan?.nextActiveSessionID == second.id, "close should select the remaining session")
+    expect(closePlan?.shouldCloseWindow == false, "closing a session should not close the window")
     expect(manager.sessions.map(\.id) == [second.id], "close should remove only the closed session")
+    let lastClosePlan = manager.closeActiveSession()
+    expect(lastClosePlan?.closedSessionID == second.id, "last close should close the last session")
+    expect(lastClosePlan?.nextActiveSessionID == nil, "last close should leave no active session")
+    expect(lastClosePlan?.shouldCloseWindow == false, "closing the last session should keep the app open")
+    expect(manager.sessions.isEmpty, "last close should leave an empty session list")
 }
 
 print("HopdeckNativeCoreChecks passed")

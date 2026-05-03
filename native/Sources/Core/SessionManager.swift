@@ -82,7 +82,7 @@ public final class SessionManager {
         return ClosePlan(
             closedSessionID: sessionID,
             nextActiveSessionID: activeSessionID,
-            shouldCloseWindow: sessions.isEmpty
+            shouldCloseWindow: false
         )
     }
 
