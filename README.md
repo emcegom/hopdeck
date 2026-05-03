@@ -24,7 +24,7 @@ Hopdeck does not automate Terminal.app or iTerm2 windows. Terminal sessions run
 inside the app through a local pseudoterminal and the OpenSSH binary already on
 your Mac.
 
-## Install
+## Install And Update
 
 Hopdeck currently publishes a macOS Apple Silicon build:
 
@@ -54,6 +54,30 @@ open /Applications/Hopdeck.app
 
 You can also download the zip from the release page, unarchive it, and drag
 `Hopdeck.app` into `/Applications`.
+
+For a first install, the zip or DMG must still be installed manually. After a
+version with the updater is installed, future releases can be installed from
+Hopdeck itself:
+
+1. Open Hopdeck.
+2. Open Settings.
+3. Click `Check for updates`.
+4. Hopdeck downloads the signed update package from GitHub Releases, installs
+   it, and restarts the app.
+
+The updater uses Tauri's signed update flow. The app contains the updater public
+key, while release builds are signed with a private key that must stay off the
+repository. GitHub Releases must include:
+
+```text
+latest.json
+Hopdeck_0.1.0_aarch64.app.tar.gz
+Hopdeck_0.1.0_aarch64.app.tar.gz.sig
+Hopdeck_0.1.0_aarch64.app.zip
+```
+
+`latest.json` points the running app to the `.app.tar.gz` updater bundle and
+contains the matching `.sig` file content.
 
 ## Usage
 
@@ -202,12 +226,41 @@ src-tauri/target/release/bundle/macos/Hopdeck.app
 Create a release zip:
 
 ```zsh
-mkdir -p release
-ditto -c -k --sequesterRsrc --keepParent \
-  src-tauri/target/release/bundle/macos/Hopdeck.app \
-  release/Hopdeck_0.1.0_aarch64.app.zip
-shasum -a 256 release/Hopdeck_0.1.0_aarch64.app.zip
+npm run release:prepare
 ```
+
+Create signed updater artifacts for a GitHub release:
+
+```zsh
+npx tauri signer generate -w ~/.tauri/hopdeck-updater.key
+```
+
+Put the generated public key into `src-tauri/tauri.conf.json` under
+`plugins.updater.pubkey`. Keep the private key and password secret.
+
+Build a release with updater artifacts:
+
+```zsh
+export TAURI_SIGNING_PRIVATE_KEY="$(cat "$HOME/.tauri/hopdeck-updater.key")"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-key-password-or-empty-string"
+npm run build:release -- --bundles app
+npm run release:prepare
+```
+
+The release helper writes:
+
+```text
+release/Hopdeck_0.1.0_aarch64.app.zip
+release/Hopdeck_0.1.0_aarch64.app.zip.sha256
+release/Hopdeck_0.1.0_aarch64.app.tar.gz
+release/Hopdeck_0.1.0_aarch64.app.tar.gz.sha256
+release/Hopdeck_0.1.0_aarch64.app.tar.gz.sig
+release/latest.json
+release/latest.json.sha256
+```
+
+Upload those files to the matching GitHub release tag. The app checks
+`https://github.com/emcegom/hopdeck/releases/latest/download/latest.json`.
 
 ## Uninstall
 
@@ -273,9 +326,15 @@ agent when you need stronger credential handling.
 Open Settings and confirm `Background blur` is greater than `0`. The persisted
 value lives in `~/.hopdeck/settings.json` as `terminal.backgroundBlur`.
 
+### Update check fails
+
+Confirm that the latest GitHub release includes `latest.json`, the updater
+`.app.tar.gz`, and the matching `.sig`. The `signature` value inside
+`latest.json` must be the file content from the `.sig`, not a path or URL.
+
 ## Roadmap
 
-- Signed and notarized macOS release packaging.
+- Notarized macOS release packaging.
 - Safer credential storage beyond the plain vault.
 - Stronger session lifecycle controls, including reconnect behavior.
 - Smart views for favorites, recent hosts, jump hosts, and all hosts.

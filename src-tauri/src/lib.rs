@@ -14,6 +14,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(terminal::TerminalManager::default())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             app.set_activation_policy(ActivationPolicy::Regular);
             app.set_menu(build_app_menu(app)?)?;

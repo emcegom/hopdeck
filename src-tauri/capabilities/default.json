@@ -8,6 +8,8 @@
     "core:app:allow-set-app-theme",
     "core:window:allow-set-theme",
     "core:window:allow-start-dragging",
-    "clipboard-manager:allow-write-text"
+    "clipboard-manager:allow-write-text",
+    "process:allow-restart",
+    "updater:default"
   ]
 }

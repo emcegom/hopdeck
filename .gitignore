@@ -14,6 +14,9 @@ src-tauri/gen/schemas/
 .hopdeck/
 *.log
 *.tmp
+*.key
+*.key.pub
+release/*.dmg
 
 # IDE
 .idea/

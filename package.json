@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "build:release": "tauri build --config src-tauri/tauri.release.conf.json",
     "frontend:dev": "vite",
     "frontend:build": "tsc && vite build",
-    "frontend:preview": "vite preview"
+    "frontend:preview": "vite preview",
+    "release:prepare": "node scripts/prepare-release.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.10.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "react": "^19.0.0",

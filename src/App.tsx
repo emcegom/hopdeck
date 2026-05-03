@@ -16,7 +16,7 @@ import { FolderEditorModal } from "./components/FolderEditorModal";
 import { HostEditorModal } from "./components/HostEditorModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
-import { TreeNavigator, type TreeDragSource } from "./components/TreeNavigator";
+import { TreeNavigator, type TreeDragSource, type TreeMoveTarget } from "./components/TreeNavigator";
 import { darkTerminalColors, terminalBackgroundColor } from "./theme";
 import type { AppSettings, Host, HostDocument, TerminalSession, TreeNode, VaultDocument } from "./types/hopdeck";
 
@@ -322,26 +322,25 @@ function App() {
   );
 
   const moveNode = useCallback(
-    async (source: TreeDragSource, targetFolderId: string | null) => {
+    async (source: TreeDragSource, target: TreeMoveTarget) => {
       if (!document) {
         return;
       }
 
-      const moved = moveTreeNode(document.tree, source, targetFolderId);
-      if (!moved) {
+      if (!canMoveTreeNode(document.tree, source, target)) {
         return;
       }
 
-      const nextDocument = await invoke<HostDocument>("save_host_document", {
-        document: {
-          ...document,
-          tree: moved
-        }
+      const nextDocument = await invoke<HostDocument>("move_node", {
+        nodeId: source.nodeId,
+        parentId: target.parentId,
+        index: adjustedMoveIndex(document.tree, source, target)
       });
 
       setDocument(nextDocument);
-      if (targetFolderId) {
-        setExpandedNodeIds((current) => new Set(current).add(targetFolderId));
+      const parentId = target.parentId;
+      if (parentId) {
+        setExpandedNodeIds((current) => new Set(current).add(parentId));
       }
     },
     [document]
@@ -487,15 +486,18 @@ function App() {
     >
       <aside className={`sidebar${isSidebarCollapsed ? " is-collapsed" : ""}`}>
         {isSidebarCollapsed ? (
-          <button
-            className="icon-button sidebar-toggle"
-            type="button"
-            onClick={() => setIsSidebarCollapsed(false)}
-            title="Show sidebar"
-            aria-label="Show sidebar"
-          >
-            <SidebarActionIcon name="expand" />
-          </button>
+          <>
+            <div className="sidebar-collapsed-window-drag" data-tauri-drag-region onMouseDown={startWindowDrag} />
+            <button
+              className="icon-button sidebar-toggle"
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
+              title="Show sidebar"
+              aria-label="Show sidebar"
+            >
+              <SidebarActionIcon name="expand" />
+            </button>
+          </>
         ) : (
           <>
             <header className="sidebar-header">
@@ -805,98 +807,64 @@ const collectHostIds = (tree: TreeNode[]): string[] => {
   return hostIds;
 };
 
-const findParentFolderId = (tree: TreeNode[], source: TreeDragSource, parentId: string | null = null): string | null => {
-  for (const node of tree) {
+const findParentFolderId = (tree: TreeNode[], source: TreeDragSource): string | null =>
+  findTreeLocation(tree, source)?.parentId ?? null;
+
+const canMoveTreeNode = (tree: TreeNode[], source: TreeDragSource, target: TreeMoveTarget): boolean => {
+  const sourceLocation = findTreeLocation(tree, source);
+  if (!sourceLocation) {
+    return false;
+  }
+
+  if (!target.parentId) {
+    return true;
+  }
+
+  const targetFolder = findFolderById(tree, target.parentId);
+  if (!targetFolder) {
+    return false;
+  }
+
+  return !(sourceLocation.node.type === "folder" && nodeContainsFolder(sourceLocation.node, target.parentId));
+};
+
+const adjustedMoveIndex = (tree: TreeNode[], source: TreeDragSource, target: TreeMoveTarget): number | null => {
+  if (target.index === undefined) {
+    return null;
+  }
+
+  const sourceLocation = findTreeLocation(tree, source);
+  if (!sourceLocation) {
+    return target.index;
+  }
+
+  if (sourceLocation.parentId === target.parentId && target.index > sourceLocation.index) {
+    return target.index - 1;
+  }
+
+  return target.index;
+};
+
+const findTreeLocation = (
+  tree: TreeNode[],
+  source: TreeDragSource,
+  parentId: string | null = null
+): { node: TreeNode; parentId: string | null; index: number } | null => {
+  for (let index = 0; index < tree.length; index += 1) {
+    const node = tree[index];
     if (matchesDragSource(node, source)) {
-      return parentId;
+      return { node, parentId, index };
     }
 
     if (node.type === "folder") {
-      const nestedParentId = findParentFolderId(node.children, source, node.id);
-      if (nestedParentId !== null) {
-        return nestedParentId;
+      const nested = findTreeLocation(node.children, source, node.id);
+      if (nested) {
+        return nested;
       }
     }
   }
 
   return null;
-};
-
-const moveTreeNode = (tree: TreeNode[], source: TreeDragSource, targetFolderId: string | null): TreeNode[] | null => {
-  if (source.type === "folder" && source.nodeId === targetFolderId) {
-    return null;
-  }
-
-  const removal = removeTreeNode(tree, source);
-  if (!removal.removed) {
-    return null;
-  }
-
-  if (targetFolderId && nodeContainsFolder(removal.removed, targetFolderId)) {
-    return null;
-  }
-
-  if (!targetFolderId) {
-    return [...removal.tree, removal.removed];
-  }
-
-  const insertedTree = insertTreeNode(removal.tree, targetFolderId, removal.removed);
-  return insertedTree.inserted ? insertedTree.tree : null;
-};
-
-const removeTreeNode = (
-  tree: TreeNode[],
-  source: TreeDragSource
-): { tree: TreeNode[]; removed: TreeNode | null } => {
-  const nextTree: TreeNode[] = [];
-
-  for (const node of tree) {
-    if (matchesDragSource(node, source)) {
-      return { tree: [...nextTree, ...tree.slice(nextTree.length + 1)], removed: node };
-    }
-
-    if (node.type === "folder") {
-      const nested = removeTreeNode(node.children, source);
-      if (nested.removed) {
-        return {
-          tree: [...nextTree, { ...node, children: nested.tree }, ...tree.slice(nextTree.length + 1)],
-          removed: nested.removed
-        };
-      }
-    }
-
-    nextTree.push(node);
-  }
-
-  return { tree, removed: null };
-};
-
-const insertTreeNode = (
-  tree: TreeNode[],
-  targetFolderId: string,
-  movedNode: TreeNode
-): { tree: TreeNode[]; inserted: boolean } => {
-  let inserted = false;
-  const nextTree = tree.map((node) => {
-    if (node.type === "hostRef") {
-      return node;
-    }
-
-    if (node.id === targetFolderId) {
-      inserted = true;
-      return { ...node, expanded: true, children: [...node.children, movedNode] };
-    }
-
-    const nested = insertTreeNode(node.children, targetFolderId, movedNode);
-    if (nested.inserted) {
-      inserted = true;
-      return { ...node, children: nested.tree };
-    }
-
-    return node;
-  });
-
-  return { tree: nextTree, inserted };
 };
 
 const matchesDragSource = (node: TreeNode, source: TreeDragSource): boolean => {

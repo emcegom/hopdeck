@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 
 import { isBuiltInTerminalColors, terminalBackgroundColor, terminalColorsForAppearance } from "../theme";
 import type { AppSettings } from "../types/hopdeck";
@@ -24,6 +26,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [status, setStatus] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -53,6 +56,28 @@ export function SettingsModal({
       setStatus(message);
     } catch (caught) {
       setStatus(errorMessage(caught));
+    }
+  };
+
+  const checkForUpdates = async () => {
+    setIsCheckingUpdate(true);
+    setStatus(null);
+
+    try {
+      const update = await check();
+
+      if (!update) {
+        setStatus("Hopdeck is up to date");
+        return;
+      }
+
+      setStatus(`Installing Hopdeck ${update.version}`);
+      await update.downloadAndInstall();
+      await relaunch();
+    } catch (caught) {
+      setStatus(errorMessage(caught));
+    } finally {
+      setIsCheckingUpdate(false);
     }
   };
 
@@ -362,6 +387,23 @@ export function SettingsModal({
               onClick={() => void runAction(onImportConfig, "Imported backup from ~/.hopdeck/hopdeck-backup.json")}
             >
               Import backup
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>Updates</h3>
+          <p className="settings-note">
+            Hopdeck checks GitHub Releases for signed update packages. The app will restart after installing an update.
+          </p>
+          <div className="settings-actions">
+            <button
+              className="secondary-action"
+              disabled={isCheckingUpdate}
+              type="button"
+              onClick={() => void checkForUpdates()}
+            >
+              {isCheckingUpdate ? "Checking updates" : "Check for updates"}
             </button>
           </div>
         </div>

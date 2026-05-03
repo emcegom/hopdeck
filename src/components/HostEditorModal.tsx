@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 
 import type { Host, HostAuth } from "../types/hopdeck";
 
@@ -30,6 +31,8 @@ interface HostDraft {
   notes: string;
 }
 
+type CopyState = "idle" | "copied" | "error";
+
 export function HostEditorModal({
   host,
   hosts,
@@ -45,12 +48,21 @@ export function HostEditorModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [copyState, setCopyState] = useState<CopyState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const copyResetTimer = useRef<number | null>(null);
 
   useEffect(() => {
     setDraft(toDraft(host, passwordValue));
     setError(null);
+    setCopyState("idle");
   }, [host, passwordValue]);
+
+  useEffect(() => () => {
+    if (copyResetTimer.current !== null) {
+      window.clearTimeout(copyResetTimer.current);
+    }
+  }, []);
 
   const jumpCandidates = useMemo(
     () => Object.values(hosts).filter((candidate) => candidate.id !== host.id),
@@ -68,6 +80,29 @@ export function HostEditorModal({
         ? current.jumpChain.filter((item) => item !== hostId)
         : [...current.jumpChain, hostId]
     }));
+  };
+
+  const copyPassword = async () => {
+    if (!draft.password) {
+      return;
+    }
+
+    if (copyResetTimer.current !== null) {
+      window.clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = null;
+    }
+
+    try {
+      await copyTextToClipboard(draft.password);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+
+    copyResetTimer.current = window.setTimeout(() => {
+      setCopyState("idle");
+      copyResetTimer.current = null;
+    }, 1200);
   };
 
   const save = async () => {
@@ -209,12 +244,12 @@ export function HostEditorModal({
                   placeholder="Stored in ~/.hopdeck/vault.json"
                 />
                 <button
-                  className="secondary-action compact"
+                  className={`secondary-action compact copy-action ${copyState === "copied" ? "is-copied" : ""}${copyState === "error" ? " is-error" : ""}`}
                   type="button"
                   disabled={!draft.password}
-                  onClick={() => void navigator.clipboard.writeText(draft.password)}
+                  onClick={() => void copyPassword()}
                 >
-                  Copy
+                  {copyState === "copied" ? "Copied" : copyState === "error" ? "Failed" : "Copy"}
                 </button>
               </div>
             </Field>
@@ -342,5 +377,23 @@ const normalizeAuth = (
       return { type: "agent" };
     case "none":
       return { type: "none" };
+  }
+};
+
+const copyTextToClipboard = async (text: string): Promise<void> => {
+  try {
+    await writeClipboardText(text);
+    return;
+  } catch (pluginError) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {
+        // Keep the plugin error because it is the expected packaged app path.
+      }
+    }
+
+    throw pluginError;
   }
 };
