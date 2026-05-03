@@ -9,6 +9,8 @@ dist/
 target/
 src-tauri/target/
 src-tauri/gen/schemas/
+native/.build/
+native/.swiftpm/
 
 # Local Hopdeck data
 .hopdeck/
