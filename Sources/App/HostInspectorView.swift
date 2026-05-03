@@ -2,21 +2,25 @@ import AppKit
 import HopdeckNativeCore
 
 final class HostInspectorView: NSView {
+    private let host: SSHHost
     private let onConnect: () -> Void
     private let onSave: (SSHHost) -> Void
     private let onDelete: (UUID) -> Void
-    private var settingsWindowController: SettingsWindowController?
+    private let onOpenSettings: () -> Void
 
     init(
         host: SSHHost,
         command: String,
         onConnect: @escaping () -> Void,
         onSave: @escaping (SSHHost) -> Void,
-        onDelete: @escaping (UUID) -> Void
+        onDelete: @escaping (UUID) -> Void,
+        onOpenSettings: @escaping () -> Void
     ) {
+        self.host = host
         self.onConnect = onConnect
         self.onSave = onSave
         self.onDelete = onDelete
+        self.onOpenSettings = onOpenSettings
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
@@ -86,8 +90,15 @@ final class HostInspectorView: NSView {
 
         let settings = NSButton(title: "Settings", target: self, action: #selector(openSettings))
         settings.bezelStyle = .rounded
+        let favorite = NSButton(
+            title: host.tags.contains("favorite") ? "Unfavorite" : "Favorite",
+            target: self,
+            action: #selector(toggleFavorite)
+        )
+        favorite.bezelStyle = .rounded
 
         actions.addArrangedSubview(connect)
+        actions.addArrangedSubview(favorite)
         actions.addArrangedSubview(settings)
         header.addArrangedSubview(identity)
         header.addArrangedSubview(actions)
@@ -130,9 +141,16 @@ final class HostInspectorView: NSView {
     }
 
     @objc private func openSettings() {
-        let controller = settingsWindowController ?? SettingsWindowController()
-        settingsWindowController = controller
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
+        onOpenSettings()
+    }
+
+    @objc private func toggleFavorite() {
+        var updated = host
+        if updated.tags.contains("favorite") {
+            updated.tags.removeAll { $0 == "favorite" }
+        } else {
+            updated.tags.append("favorite")
+        }
+        onSave(updated)
     }
 }

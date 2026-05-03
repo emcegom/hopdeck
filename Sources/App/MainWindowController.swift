@@ -2,20 +2,22 @@ import AppKit
 import HopdeckNativeCore
 final class MainWindowController: NSWindowController {
     private let inventory = HostInventoryService()
+    private let settingsStore = SettingsDocumentStore()
     private let sessionManager = SessionManager()
     private let splitView = NSSplitView()
     private let sidebarController = SidebarController()
     private let workspaceController = WorkspaceController()
+    private var settings = NativeSettingsDocument()
+    private var settingsWindowController: SettingsWindowController?
 
     convenience init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1180, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Hopdeck Native"
-        window.titlebarAppearsTransparent = true
+        window.title = "Hopdeck"
         window.toolbarStyle = .unifiedCompact
         window.center()
         self.init(window: window)
@@ -24,8 +26,10 @@ final class MainWindowController: NSWindowController {
 
     private func configureWindow() {
         sessionManager.delegate = self
+        settings = (try? settingsStore.load()) ?? NativeSettingsDocument()
         configureToolbar()
         configureSplitView()
+        apply(settings: settings)
         reloadHosts()
         sidebarController.onSelectHost = { [weak self] host in
             self?.showHost(host)
@@ -92,6 +96,9 @@ final class MainWindowController: NSWindowController {
             },
             onDelete: { [weak self] hostID in
                 self?.deleteHost(hostID: hostID)
+            },
+            onOpenSettings: { [weak self] in
+                self?.openSettings()
             }
         )
     }
@@ -103,6 +110,28 @@ final class MainWindowController: NSWindowController {
             showHost(host)
         } catch {
             present(error: error)
+        }
+    }
+
+    private func save(settings: NativeSettingsDocument) {
+        do {
+            try settingsStore.save(settings)
+            apply(settings: settings)
+        } catch {
+            present(error: error)
+        }
+    }
+
+    private func apply(settings: NativeSettingsDocument) {
+        self.settings = settings
+        workspaceController.apply(settings: settings)
+        switch settings.theme {
+        case .system:
+            window?.appearance = nil
+        case .light:
+            window?.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            window?.appearance = NSAppearance(named: .darkAqua)
         }
     }
 
@@ -165,11 +194,11 @@ extension MainWindowController: SessionManagerDelegate {
 
 extension MainWindowController: NSToolbarDelegate {
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .init("NewHost"), .flexibleSpace, .init("NewLocalShell")]
+        [.toggleSidebar, .init("NewHost"), .init("Settings"), .flexibleSpace, .init("NewLocalShell")]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .init("NewHost"), .flexibleSpace, .init("NewLocalShell")]
+        [.toggleSidebar, .init("NewHost"), .init("Settings"), .flexibleSpace, .init("NewLocalShell")]
     }
 
     func toolbar(
@@ -198,11 +227,30 @@ extension MainWindowController: NSToolbarDelegate {
             item.action = #selector(openLocalShell)
             return item
         }
+        if itemIdentifier == .init("Settings") {
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Settings"
+            item.paletteLabel = "Settings"
+            item.toolTip = "Open settings"
+            item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
+            item.target = self
+            item.action = #selector(openSettings)
+            return item
+        }
         return nil
     }
 
     @objc private func openLocalShell() {
         connect(to: .localShell)
+    }
+
+    @objc private func openSettings() {
+        let controller = SettingsWindowController(settings: settings) { [weak self] updatedSettings in
+            self?.save(settings: updatedSettings)
+        }
+        settingsWindowController = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func newHost() {

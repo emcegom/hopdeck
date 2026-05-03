@@ -85,38 +85,41 @@ func drawIcon(size: Int) {
     NSColor.clear.setFill()
     canvas.fill()
 
-    let baseRect = NSRect(x: 48 * scale, y: 48 * scale, width: 928 * scale, height: 928 * scale)
-    let basePath = NSBezierPath(roundedRect: baseRect, xRadius: 210 * scale, yRadius: 210 * scale)
-    shadow(color: NSColor.black.withAlphaComponent(0.33), blur: 34 * scale, y: -16 * scale)
-    gradientFill(path: basePath, start: "#122231", end: "#001E27", angle: 90)
+    let baseRect = NSRect(x: 46 * scale, y: 46 * scale, width: 932 * scale, height: 932 * scale)
+    let basePath = NSBezierPath(roundedRect: baseRect, xRadius: 216 * scale, yRadius: 216 * scale)
+    shadow(color: NSColor.black.withAlphaComponent(0.30), blur: 36 * scale, y: -18 * scale)
+    gradientFill(path: basePath, start: "#11283D", end: "#071319", angle: 88)
     NSShadow().set()
 
-    let glowPath = NSBezierPath(ovalIn: NSRect(x: 92 * scale, y: 520 * scale, width: 620 * scale, height: 360 * scale))
-    gradientFill(path: glowPath, start: "#41B6C855", end: "#41B6C800", angle: 35)
+    let horizon = NSBezierPath(ovalIn: NSRect(x: -50 * scale, y: 584 * scale, width: 980 * scale, height: 280 * scale))
+    gradientFill(path: horizon, start: "#64D2FF44", end: "#64D2FF00", angle: 25)
+
+    let ember = NSBezierPath(ovalIn: NSRect(x: 398 * scale, y: 118 * scale, width: 520 * scale, height: 280 * scale))
+    gradientFill(path: ember, start: "#E5C15D33", end: "#E5C15D00", angle: 15)
 
     drawDeckLayer(
-        rect: NSRect(x: 238 * scale, y: 266 * scale, width: 548 * scale, height: 402 * scale),
-        radius: 72 * scale,
-        offset: NSPoint(x: -64 * scale, y: -50 * scale),
-        alpha: 0.34,
+        rect: NSRect(x: 222 * scale, y: 258 * scale, width: 580 * scale, height: 430 * scale),
+        radius: 78 * scale,
+        offset: NSPoint(x: -72 * scale, y: -54 * scale),
+        alpha: 0.26,
         scale: scale
     )
     drawDeckLayer(
-        rect: NSRect(x: 238 * scale, y: 266 * scale, width: 548 * scale, height: 402 * scale),
-        radius: 72 * scale,
-        offset: NSPoint(x: -32 * scale, y: -24 * scale),
-        alpha: 0.52,
+        rect: NSRect(x: 222 * scale, y: 258 * scale, width: 580 * scale, height: 430 * scale),
+        radius: 78 * scale,
+        offset: NSPoint(x: -34 * scale, y: -24 * scale),
+        alpha: 0.42,
         scale: scale
     )
 
-    let terminalRect = NSRect(x: 238 * scale, y: 276 * scale, width: 548 * scale, height: 402 * scale)
-    let terminalPath = NSBezierPath(roundedRect: terminalRect, xRadius: 72 * scale, yRadius: 72 * scale)
+    let terminalRect = NSRect(x: 222 * scale, y: 270 * scale, width: 580 * scale, height: 430 * scale)
+    let terminalPath = NSBezierPath(roundedRect: terminalRect, xRadius: 78 * scale, yRadius: 78 * scale)
     shadow(color: NSColor.black.withAlphaComponent(0.34), blur: 28 * scale, y: -12 * scale)
-    gradientFill(path: terminalPath, start: "#182D3B", end: "#07141D", angle: 90)
+    gradientFill(path: terminalPath, start: "#193247", end: "#08141C", angle: 90)
     NSShadow().set()
-    stroke(path: terminalPath, color: "#6FE3F255", width: 3 * scale)
+    stroke(path: terminalPath, color: "#64D2FF66", width: 4 * scale)
 
-    drawWindowControls(origin: NSPoint(x: 314 * scale, y: 604 * scale), scale: scale)
+    drawWindowControls(origin: NSPoint(x: 306 * scale, y: 624 * scale), scale: scale)
     drawTerminalGlyph(scale: scale)
     drawHopRoute(scale: scale)
 }
@@ -128,7 +131,7 @@ func drawDeckLayer(rect: NSRect, radius: CGFloat, offset: NSPoint, alpha: CGFloa
         yRadius: radius
     )
     shadow(color: NSColor.black.withAlphaComponent(0.16), blur: 12 * scale, y: -5 * scale)
-    color("#41B6C8").withAlphaComponent(alpha).setFill()
+    color("#64D2FF").withAlphaComponent(alpha).setFill()
     path.fill()
     NSShadow().set()
 }
@@ -145,23 +148,23 @@ func drawWindowControls(origin: NSPoint, scale: CGFloat) {
 func drawTerminalGlyph(scale: CGFloat) {
     strokeLine(
         points: [
-            NSPoint(x: 330 * scale, y: 470 * scale),
-            NSPoint(x: 394 * scale, y: 512 * scale),
-            NSPoint(x: 330 * scale, y: 554 * scale),
+            NSPoint(x: 324 * scale, y: 482 * scale),
+            NSPoint(x: 398 * scale, y: 524 * scale),
+            NSPoint(x: 324 * scale, y: 566 * scale),
         ],
-        color: "#DBE7F3",
-        width: 26 * scale,
+        color: "#F3F7FB",
+        width: 28 * scale,
         lineCap: .round,
         lineJoin: .round
     )
 
     strokeLine(
         points: [
-            NSPoint(x: 440 * scale, y: 458 * scale),
-            NSPoint(x: 558 * scale, y: 458 * scale),
+            NSPoint(x: 456 * scale, y: 472 * scale),
+            NSPoint(x: 596 * scale, y: 472 * scale),
         ],
-        color: "#41B6C8",
-        width: 26 * scale,
+        color: "#64D2FF",
+        width: 28 * scale,
         lineCap: .round,
         lineJoin: .round
     )
@@ -169,17 +172,17 @@ func drawTerminalGlyph(scale: CGFloat) {
 
 func drawHopRoute(scale: CGFloat) {
     let route = NSBezierPath()
-    route.move(to: NSPoint(x: 440 * scale, y: 386 * scale))
+    route.move(to: NSPoint(x: 392 * scale, y: 384 * scale))
     route.curve(
-        to: NSPoint(x: 676 * scale, y: 506 * scale),
-        controlPoint1: NSPoint(x: 498 * scale, y: 324 * scale),
-        controlPoint2: NSPoint(x: 626 * scale, y: 362 * scale)
+        to: NSPoint(x: 704 * scale, y: 556 * scale),
+        controlPoint1: NSPoint(x: 492 * scale, y: 326 * scale),
+        controlPoint2: NSPoint(x: 642 * scale, y: 388 * scale)
     )
-    stroke(path: route, color: "#41B6C8", width: 20 * scale, lineCap: .round, lineJoin: .round)
+    stroke(path: route, color: "#E5C15D", width: 20 * scale, lineCap: .round, lineJoin: .round)
 
-    drawNode(center: NSPoint(x: 420 * scale, y: 390 * scale), radius: 34 * scale, fill: "#41B6C8", strokeColor: "#D7F8FF", scale: scale)
-    drawNode(center: NSPoint(x: 548 * scale, y: 406 * scale), radius: 24 * scale, fill: "#001E27", strokeColor: "#41B6C8", scale: scale)
-    drawNode(center: NSPoint(x: 690 * scale, y: 512 * scale), radius: 42 * scale, fill: "#41B6C8", strokeColor: "#D7F8FF", scale: scale)
+    drawNode(center: NSPoint(x: 388 * scale, y: 386 * scale), radius: 34 * scale, fill: "#64D2FF", strokeColor: "#E7FBFF", scale: scale)
+    drawNode(center: NSPoint(x: 550 * scale, y: 416 * scale), radius: 24 * scale, fill: "#071319", strokeColor: "#E5C15D", scale: scale)
+    drawNode(center: NSPoint(x: 718 * scale, y: 562 * scale), radius: 43 * scale, fill: "#E5C15D", strokeColor: "#FFF4C7", scale: scale)
 }
 
 func drawNode(center: NSPoint, radius: CGFloat, fill: String, strokeColor: String, scale: CGFloat) {

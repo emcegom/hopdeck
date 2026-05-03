@@ -6,14 +6,18 @@ production complete.
 
 ## Product Experience
 
-- Settings controls are visible but not fully bound to `settings.json`.
-- Smart Views and folders are displayed, but folder management, drag/drop, and
-  smart-view predicates are not fully interactive.
+- Settings controls are bound for theme, terminal font size, auto-login,
+  close-on-disconnect, and clipboard timeout. Terminal color editing and the
+  rest of the settings surface are not implemented yet.
+- Smart Views and tag folders are interactive for built-in predicates and tag
+  filtering. Folder management, drag/drop, custom folders, and user-defined
+  smart-view predicates are not implemented yet.
 - Host CRUD is minimal: save, clone, and delete work, but validation, sheet
   presentation, confirmation flows, duplicate detection, and polished errors are
   still missing.
-- Search, filtering, favorites, recent hosts, and recent directories are not yet
-  implemented.
+- Sidebar search, Favorites, Needs Attention, tag folders, and a placeholder
+  Recent predicate are implemented. Real connection history, recent
+  directories, and workspace-aware filtering are not implemented yet.
 - Workspace restore is not implemented. `workspaces.json` exists, but the app
   does not restore previous tabs or layouts on launch.
 - Split panes are not implemented.
@@ -41,9 +45,10 @@ production complete.
 
 ## Diagnostics
 
-- Diagnostics reports are static.
-- Reachability checks, SSH dry-run checks, credential checks, and jump-chain
-  checks are not executed yet.
+- Diagnostics can refresh a local report for target shape, credential
+  configuration, direct jump-chain state, and `/usr/bin/ssh` availability.
+- Reachability checks, SSH dry-run checks, Keychain credential reads, and real
+  jump-chain validation are not executed yet.
 - Diagnostics results are not persisted or tied to session failure banners.
 
 ## Release And Updates
@@ -60,6 +65,9 @@ production complete.
 - The current validation target is `HopdeckNativeCoreChecks`.
 - There is no XCTest suite yet.
 - There are no AppKit UI tests.
+- Manual AppKit validation currently covers launch, native toolbar layout,
+  sidebar search, host selection, favorite toggle, settings save/apply,
+  local shell open, diagnostics refresh, and File -> Close Session.
 - PTY lifecycle tests are shallow and should cover detach/attach, resize,
   process exit, and close behavior more deeply.
 - Migration tests use inline fixtures and should move to stable fixture files.

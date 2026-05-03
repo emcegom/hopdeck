@@ -2,7 +2,13 @@ import AppKit
 import HopdeckNativeCore
 
 final class ConnectionDiagnosticsView: NSView {
+    private let host: SSHHost
+    private let command: String
+    private let rowsStack = NSStackView()
+
     init(host: SSHHost, command: String) {
+        self.host = host
+        self.command = command
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         build(report: ConnectionDiagnosticsService().staticReport(for: host), command: command)
@@ -26,22 +32,16 @@ final class ConnectionDiagnosticsView: NSView {
 
         let title = NSTextField(labelWithString: "Connection Diagnostics")
         title.font = .systemFont(ofSize: 13, weight: .semibold)
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .leading
+        rowsStack.spacing = 10
+        render(report: report, command: command)
 
-        let rows = report.diagnostics.map { diagnostic in
-            diagnosticRow(
-                symbol: symbol(for: diagnostic.title),
-                title: diagnostic.title,
-                detail: diagnostic.title == "Command" ? command : diagnostic.detail,
-                state: diagnostic.state.rawValue
-            )
-        }
-
-        let run = NSButton(title: "Run Diagnostics", target: nil, action: nil)
+        let run = NSButton(title: "Run Diagnostics", target: self, action: #selector(runDiagnostics))
         run.bezelStyle = .rounded
-        run.isEnabled = false
 
         stack.addArrangedSubview(title)
-        rows.forEach { stack.addArrangedSubview($0) }
+        stack.addArrangedSubview(rowsStack)
         stack.addArrangedSubview(run)
         addSubview(stack)
 
@@ -51,6 +51,21 @@ final class ConnectionDiagnosticsView: NSView {
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+    }
+
+    private func render(report: ConnectionDiagnosticsReport, command: String) {
+        rowsStack.arrangedSubviews.forEach { view in
+            rowsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        report.diagnostics.map { diagnostic in
+            diagnosticRow(
+                symbol: symbol(for: diagnostic.title),
+                title: diagnostic.title,
+                detail: diagnostic.title == "Command" ? command : diagnostic.detail,
+                state: diagnostic.state.rawValue
+            )
+        }.forEach { rowsStack.addArrangedSubview($0) }
     }
 
     private func diagnosticRow(symbol: String, title: String, detail: String, state: String) -> NSView {
@@ -86,6 +101,10 @@ final class ConnectionDiagnosticsView: NSView {
         ])
 
         return row
+    }
+
+    @objc private func runDiagnostics() {
+        render(report: ConnectionDiagnosticsService().runLocalReport(for: host), command: command)
     }
 
     private func symbol(for title: String) -> String {

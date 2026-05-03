@@ -16,7 +16,11 @@ repository root is the macOS app.
 - Multiple terminal sessions with stable `sessionId` ownership.
 - `Cmd+W` closes the current session without quitting the app.
 - Host CRUD backed by native `hosts.json`.
-- Smart Views, folders, settings, and diagnostics UI foundations.
+- Sidebar search with built-in Smart Views, tag folders, and favorite toggles.
+- Settings persistence for theme, terminal font size, SSH behavior, and
+  clipboard timeout.
+- Runnable local diagnostics for target shape, credential mode, jump-chain
+  status, and OpenSSH availability.
 - `hosts.json`, `settings.json`, and `workspaces.json` stores.
 - Legacy `~/.hopdeck/hosts.json` and `settings.json` migration skeleton.
 - macOS Keychain boundary through `CredentialService`.

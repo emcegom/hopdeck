@@ -14,6 +14,7 @@ final class WorkspaceController: NSViewController {
     private var terminalViews: [UUID: TerminalView] = [:]
     private var sessions: [TerminalSession] = []
     private var activeSessionID: UUID?
+    private var settings = NativeSettingsDocument()
 
     override func loadView() {
         view = NSView()
@@ -30,9 +31,9 @@ final class WorkspaceController: NSViewController {
         stack.spacing = 16
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "Hopdeck Native")
+        let title = NSTextField(labelWithString: "Hopdeck")
         title.font = .systemFont(ofSize: 28, weight: .bold)
-        let note = NSTextField(labelWithString: "Swift/AppKit + SwiftTerm spike. Start a local shell or select a host.")
+        let note = NSTextField(labelWithString: "Open a local shell or select a host.")
         note.textColor = .secondaryLabelColor
         let button = NSButton(title: "Open Local Shell", target: self, action: #selector(startLocalShell))
         button.bezelStyle = .rounded
@@ -53,7 +54,8 @@ final class WorkspaceController: NSViewController {
         command: String,
         onConnect: @escaping () -> Void,
         onSave: @escaping (SSHHost) -> Void,
-        onDelete: @escaping (UUID) -> Void
+        onDelete: @escaping (UUID) -> Void,
+        onOpenSettings: @escaping () -> Void
     ) {
         clearContent()
         let inspector = HostInspectorView(
@@ -61,7 +63,8 @@ final class WorkspaceController: NSViewController {
             command: command,
             onConnect: onConnect,
             onSave: onSave,
-            onDelete: onDelete
+            onDelete: onDelete,
+            onOpenSettings: onOpenSettings
         )
         inspector.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(inspector)
@@ -80,10 +83,7 @@ final class WorkspaceController: NSViewController {
         let terminalView = TerminalView(frame: content.bounds)
         terminalView.translatesAutoresizingMaskIntoConstraints = false
         terminalView.terminalDelegate = self
-        terminalView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        terminalView.nativeForegroundColor = .textColor
-        terminalView.nativeBackgroundColor = .textBackgroundColor
-        terminalView.caretColor = .controlAccentColor
+        applyTerminalSettings(to: terminalView)
         terminalView.allowMouseReporting = true
         terminalView.optionAsMetaKey = true
         terminalView.identifier = NSUserInterfaceItemIdentifier(session.id.uuidString)
@@ -124,6 +124,19 @@ final class WorkspaceController: NSViewController {
 
     func feed(_ bytes: ArraySlice<UInt8>, to sessionID: UUID) {
         terminalViews[sessionID]?.feed(byteArray: bytes)
+    }
+
+    func apply(settings: NativeSettingsDocument) {
+        self.settings = settings
+        terminalViews.values.forEach(applyTerminalSettings)
+        switch settings.theme {
+        case .system:
+            view.window?.appearance = nil
+        case .light:
+            view.window?.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            view.window?.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 
     func terminalSize(for sessionID: UUID) -> TerminalProcessSize {
@@ -187,6 +200,13 @@ final class WorkspaceController: NSViewController {
         content.subviews.forEach { $0.removeFromSuperview() }
     }
 
+    private func applyTerminalSettings(to terminalView: TerminalView) {
+        terminalView.font = .monospacedSystemFont(ofSize: CGFloat(settings.terminal.fontSize), weight: .regular)
+        terminalView.nativeForegroundColor = NSColor(hex: settings.terminal.colors.foreground) ?? .textColor
+        terminalView.nativeBackgroundColor = NSColor(hex: settings.terminal.colors.background) ?? .textBackgroundColor
+        terminalView.caretColor = NSColor(hex: settings.terminal.colors.cursor) ?? .controlAccentColor
+    }
+
     @objc private func startLocalShell() {
         onStartLocalShell?()
     }
@@ -211,6 +231,24 @@ final class WorkspaceController: NSViewController {
         activeSessionID = session.id
         onSelectSession?(session.id)
         _ = terminalView.becomeFirstResponder()
+    }
+}
+
+private extension NSColor {
+    convenience init?(hex: String) {
+        var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("#") {
+            value.removeFirst()
+        }
+        guard value.count == 6, let number = UInt64(value, radix: 16) else {
+            return nil
+        }
+        self.init(
+            calibratedRed: CGFloat((number >> 16) & 0xff) / 255,
+            green: CGFloat((number >> 8) & 0xff) / 255,
+            blue: CGFloat(number & 0xff) / 255,
+            alpha: 1
+        )
     }
 }
 

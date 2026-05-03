@@ -70,6 +70,31 @@ public struct ConnectionDiagnosticsService {
         )
     }
 
+    public func runLocalReport(for host: SSHHost) -> ConnectionDiagnosticsReport {
+        var report = staticReport(for: host)
+        let sshExists = FileManager.default.isExecutableFile(atPath: "/usr/bin/ssh")
+        report.diagnostics = report.diagnostics.map { diagnostic in
+            var updated = diagnostic
+            switch diagnostic.title {
+            case "Target":
+                updated.state = host.address.isEmpty ? .failed : .passed
+                updated.detail = host.address.isEmpty ? "Address is required" : "\(host.address):\(host.port)"
+            case "Credential":
+                updated.state = credentialState(for: host.credential)
+            case "Jump Chain":
+                updated.state = host.jumpChain.isEmpty ? .passed : .warning
+                updated.detail = host.jumpChain.isEmpty ? "Direct connection" : "Jump-chain validation is not implemented yet"
+            case "Command":
+                updated.state = sshExists ? .passed : .failed
+                updated.detail = sshExists ? report.commandPreview : "/usr/bin/ssh is not executable"
+            default:
+                break
+            }
+            return updated
+        }
+        return report
+    }
+
     private func credentialDetail(for credential: CredentialRef) -> String {
         switch credential.kind {
         case .password:
