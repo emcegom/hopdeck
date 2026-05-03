@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-public struct CredentialRef: Codable, Equatable, Hashable {
-    public enum Kind: String, Codable, Hashable {
+public struct CredentialRef: Codable, Equatable, Hashable, Sendable {
+    public enum Kind: String, Codable, Hashable, Sendable {
         case password
         case keyPassphrase
         case agent

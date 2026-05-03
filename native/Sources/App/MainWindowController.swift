@@ -1,7 +1,5 @@
 import AppKit
 import HopdeckNativeCore
-import SwiftTerm
-
 final class MainWindowController: NSWindowController {
     private let inventory = HostInventoryService()
     private let sessionManager = SessionManager()
@@ -28,7 +26,7 @@ final class MainWindowController: NSWindowController {
         sessionManager.delegate = self
         configureToolbar()
         configureSplitView()
-        sidebarController.hosts = inventory.hosts
+        reloadHosts()
         sidebarController.onSelectHost = { [weak self] host in
             self?.showHost(host)
         }
@@ -41,8 +39,11 @@ final class MainWindowController: NSWindowController {
         workspaceController.onSelectSession = { [weak self] sessionID in
             self?.sessionManager.activate(sessionID: sessionID)
         }
-        workspaceController.onSessionExited = { [weak self] sessionID, exitCode in
-            self?.sessionManager.markExited(sessionID: sessionID, exitCode: exitCode)
+        workspaceController.onSendInput = { [weak self] sessionID, data in
+            self?.sessionManager.send(data, to: sessionID)
+        }
+        workspaceController.onResizeSession = { [weak self] sessionID, size in
+            self?.sessionManager.resize(sessionID: sessionID, to: size)
         }
         workspaceController.showWelcome()
     }
@@ -75,27 +76,59 @@ final class MainWindowController: NSWindowController {
         window?.toolbar = toolbar
     }
 
+    private func reloadHosts() {
+        sidebarController.hosts = inventory.hosts
+    }
+
     private func showHost(_ host: SSHHost) {
         workspaceController.showHostInspector(
             host: host,
             command: sessionManager.displayCommand(for: .ssh(host)),
             onConnect: { [weak self] in
                 self?.connect(to: .ssh(host))
+            },
+            onSave: { [weak self] updatedHost in
+                self?.save(host: updatedHost)
+            },
+            onDelete: { [weak self] hostID in
+                self?.deleteHost(hostID: hostID)
             }
         )
     }
 
+    private func save(host: SSHHost) {
+        do {
+            try inventory.upsert(host)
+            reloadHosts()
+            showHost(host)
+        } catch {
+            present(error: error)
+        }
+    }
+
+    private func deleteHost(hostID: UUID) {
+        do {
+            try inventory.delete(hostID: hostID)
+            reloadHosts()
+            workspaceController.showWelcome()
+        } catch {
+            present(error: error)
+        }
+    }
+
+    private func present(error: Error) {
+        let alert = NSAlert(error: error)
+        alert.beginSheetModal(for: window ?? NSWindow())
+    }
+
     private func connect(to target: ConnectionTarget) {
         let session = sessionManager.createSession(target: target)
-        let command = sessionManager.command(for: target)
-        workspaceController.startSession(
-            session: session,
-            executable: command.executable,
-            arguments: command.arguments,
-            execName: command.execName,
-            currentDirectory: command.currentDirectory
+        workspaceController.startSession(session: session)
+        sessionManager.startProcess(
+            sessionID: session.id,
+            command: sessionManager.processCommand(for: target),
+            initialSize: workspaceController.terminalSize(for: session.id)
         )
-        sessionManager.markRunning(sessionID: session.id)
     }
 
     func closeActiveSession() {
@@ -124,15 +157,19 @@ extension MainWindowController: SessionManagerDelegate {
     func sessionManagerDidUpdateSessions(_ manager: SessionManager) {
         workspaceController.updateSessions(manager.sessions, activeSessionID: manager.activeSessionID)
     }
+
+    func sessionManager(_ manager: SessionManager, didReceive bytes: ArraySlice<UInt8>, for sessionID: UUID) {
+        workspaceController.feed(bytes, to: sessionID)
+    }
 }
 
 extension MainWindowController: NSToolbarDelegate {
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .flexibleSpace, .init("NewLocalShell")]
+        [.toggleSidebar, .init("NewHost"), .flexibleSpace, .init("NewLocalShell")]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .flexibleSpace, .init("NewLocalShell")]
+        [.toggleSidebar, .init("NewHost"), .flexibleSpace, .init("NewLocalShell")]
     }
 
     func toolbar(
@@ -140,6 +177,17 @@ extension MainWindowController: NSToolbarDelegate {
         itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
+        if itemIdentifier == .init("NewHost") {
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Host"
+            item.paletteLabel = "New Host"
+            item.toolTip = "Create a new SSH host"
+            item.image = NSImage(systemSymbolName: "plus.rectangle.on.rectangle", accessibilityDescription: "New Host")
+            item.target = self
+            item.action = #selector(newHost)
+            return item
+        }
+
         if itemIdentifier == .init("NewLocalShell") {
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = "Local"
@@ -155,5 +203,18 @@ extension MainWindowController: NSToolbarDelegate {
 
     @objc private func openLocalShell() {
         connect(to: .localShell)
+    }
+
+    @objc private func newHost() {
+        let host = SSHHost(
+            id: UUID(),
+            alias: "New Host",
+            address: "",
+            user: NSUserName(),
+            port: 22,
+            jumpChain: [],
+            tags: []
+        )
+        showHost(host)
     }
 }

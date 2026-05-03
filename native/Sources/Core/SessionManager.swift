@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 public protocol SessionManagerDelegate: AnyObject {
     func sessionManagerDidUpdateSessions(_ manager: SessionManager)
+    func sessionManager(_ manager: SessionManager, didReceive bytes: ArraySlice<UInt8>, for sessionID: UUID)
 }
 
 @MainActor
@@ -18,6 +19,7 @@ public final class SessionManager {
     private let commandBuilder = OpenSSHCommandBuilder()
     public private(set) var sessions: [TerminalSession] = []
     public private(set) var activeSessionID: UUID?
+    private var processes: [UUID: TerminalProcessAdapter] = [:]
 
     public init() {}
 
@@ -50,6 +52,10 @@ public final class SessionManager {
         commandBuilder.build(target: target)
     }
 
+    public func processCommand(for target: ConnectionTarget) -> TerminalProcessCommand {
+        commandBuilder.processCommand(for: target)
+    }
+
     public func displayCommand(for target: ConnectionTarget) -> String {
         commandBuilder.displayCommand(for: target)
     }
@@ -72,10 +78,11 @@ public final class SessionManager {
 
     public func closeActiveSession() -> ClosePlan? {
         guard let sessionID = activeSessionID else {
-            return ClosePlan(closedSessionID: nil, nextActiveSessionID: nil, shouldCloseWindow: true)
+            return ClosePlan(closedSessionID: nil, nextActiveSessionID: nil, shouldCloseWindow: false)
         }
 
         update(sessionID: sessionID) { $0.state = .closing }
+        processes.removeValue(forKey: sessionID)?.terminate()
         sessions.removeAll { $0.id == sessionID }
         activeSessionID = sessions.last?.id
         delegate?.sessionManagerDidUpdateSessions(self)
@@ -86,11 +93,51 @@ public final class SessionManager {
         )
     }
 
+    public func startProcess(sessionID: UUID, command: TerminalProcessCommand, initialSize: TerminalProcessSize) {
+        guard sessions.contains(where: { $0.id == sessionID }) else {
+            return
+        }
+        let adapter = TerminalProcessAdapter(sessionID: sessionID, initialSize: initialSize)
+        adapter.delegate = self
+        processes[sessionID] = adapter
+        adapter.start(command: command)
+        markRunning(sessionID: sessionID)
+    }
+
+    public func send(_ bytes: ArraySlice<UInt8>, to sessionID: UUID) {
+        processes[sessionID]?.send(bytes)
+    }
+
+    public func resize(sessionID: UUID, to size: TerminalProcessSize) {
+        processes[sessionID]?.resize(to: size)
+    }
+
     private func update(sessionID: UUID, _ mutate: (inout TerminalSession) -> Void) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
             return
         }
         mutate(&sessions[index])
         delegate?.sessionManagerDidUpdateSessions(self)
+    }
+}
+
+extension SessionManager: TerminalProcessAdapterDelegate {
+    public nonisolated func terminalProcessAdapter(_ adapter: TerminalProcessAdapter, didReceive bytes: ArraySlice<UInt8>) {
+        let sessionID = adapter.sessionID
+        let copiedBytes = Array(bytes)
+        Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+            self.delegate?.sessionManager(self, didReceive: copiedBytes[...], for: sessionID)
+        }
+    }
+
+    public nonisolated func terminalProcessAdapter(_ adapter: TerminalProcessAdapter, didExitWith exitCode: Int32?) {
+        let sessionID = adapter.sessionID
+        Task { @MainActor [weak self] in
+            self?.processes[sessionID] = nil
+            self?.markExited(sessionID: sessionID, exitCode: exitCode)
+        }
     }
 }

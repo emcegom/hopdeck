@@ -16,6 +16,9 @@ let package = Package(
     targets: [
         .target(
             name: "HopdeckNativeCore",
+            dependencies: [
+                .product(name: "SwiftTerm", package: "SwiftTerm")
+            ],
             path: "Sources/Core"
         ),
         .executableTarget(

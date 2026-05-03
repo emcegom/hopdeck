@@ -35,6 +35,16 @@ public struct OpenSSHCommandBuilder {
         return ([command.executable] + command.arguments).map(shellQuote).joined(separator: " ")
     }
 
+    public func processCommand(for target: ConnectionTarget) -> TerminalProcessCommand {
+        let command = build(target: target)
+        return TerminalProcessCommand(
+            executable: command.executable,
+            arguments: command.arguments,
+            execName: command.execName,
+            currentDirectory: command.currentDirectory
+        )
+    }
+
     private func shellQuote(_ value: String) -> String {
         if value.range(of: #"^[A-Za-z0-9_@%+=:,./-]+$"#, options: .regularExpression) != nil {
             return value

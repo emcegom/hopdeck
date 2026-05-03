@@ -5,12 +5,13 @@ import SwiftTerm
 final class WorkspaceController: NSViewController {
     var onStartLocalShell: (() -> Void)?
     var onSelectSession: ((UUID) -> Void)?
-    var onSessionExited: ((UUID, Int32?) -> Void)?
+    var onSendInput: ((UUID, ArraySlice<UInt8>) -> Void)?
+    var onResizeSession: ((UUID, TerminalProcessSize) -> Void)?
 
     private let container = NSView()
     private let tabControl = NSSegmentedControl()
     private let content = NSView()
-    private var terminalViews: [UUID: LocalProcessTerminalView] = [:]
+    private var terminalViews: [UUID: TerminalView] = [:]
     private var sessions: [TerminalSession] = []
     private var activeSessionID: UUID?
 
@@ -47,9 +48,21 @@ final class WorkspaceController: NSViewController {
         ])
     }
 
-    func showHostInspector(host: SSHHost, command: String, onConnect: @escaping () -> Void) {
+    func showHostInspector(
+        host: SSHHost,
+        command: String,
+        onConnect: @escaping () -> Void,
+        onSave: @escaping (SSHHost) -> Void,
+        onDelete: @escaping (UUID) -> Void
+    ) {
         clearContent()
-        let inspector = HostInspectorView(host: host, command: command, onConnect: onConnect)
+        let inspector = HostInspectorView(
+            host: host,
+            command: command,
+            onConnect: onConnect,
+            onSave: onSave,
+            onDelete: onDelete
+        )
         inspector.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(inspector)
 
@@ -61,18 +74,12 @@ final class WorkspaceController: NSViewController {
         ])
     }
 
-    func startSession(
-        session: TerminalSession,
-        executable: String,
-        arguments: [String],
-        execName: String?,
-        currentDirectory: String
-    ) {
+    func startSession(session: TerminalSession) {
         clearContent()
 
-        let terminalView = LocalProcessTerminalView(frame: content.bounds)
+        let terminalView = TerminalView(frame: content.bounds)
         terminalView.translatesAutoresizingMaskIntoConstraints = false
-        terminalView.processDelegate = self
+        terminalView.terminalDelegate = self
         terminalView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         terminalView.nativeForegroundColor = .textColor
         terminalView.nativeBackgroundColor = .textBackgroundColor
@@ -91,13 +98,6 @@ final class WorkspaceController: NSViewController {
 
         terminalViews[session.id] = terminalView
         activeSessionID = session.id
-        terminalView.startProcess(
-            executable: executable,
-            args: arguments,
-            environment: nil,
-            execName: execName,
-            currentDirectory: currentDirectory
-        )
         _ = terminalView.becomeFirstResponder()
     }
 
@@ -116,11 +116,26 @@ final class WorkspaceController: NSViewController {
     }
 
     func detachSession(sessionID: UUID) {
-        terminalViews[sessionID]?.terminate()
         terminalViews[sessionID]?.removeFromSuperview()
         terminalViews[sessionID] = nil
         self.activeSessionID = nil
         clearContent()
+    }
+
+    func feed(_ bytes: ArraySlice<UInt8>, to sessionID: UUID) {
+        terminalViews[sessionID]?.feed(byteArray: bytes)
+    }
+
+    func terminalSize(for sessionID: UUID) -> TerminalProcessSize {
+        guard let terminalView = terminalViews[sessionID] else {
+            return TerminalProcessSize(columns: 100, rows: 30)
+        }
+        return TerminalProcessSize(
+            columns: terminalView.getTerminal().cols,
+            rows: terminalView.getTerminal().rows,
+            pixelWidth: Int(terminalView.frame.width),
+            pixelHeight: Int(terminalView.frame.height)
+        )
     }
 
     func showSession(sessionID: UUID) {
@@ -199,17 +214,53 @@ final class WorkspaceController: NSViewController {
     }
 }
 
-extension WorkspaceController: @preconcurrency LocalProcessTerminalViewDelegate {
-    func processTerminated(source: TerminalView, exitCode: Int32?) {
+extension WorkspaceController: @preconcurrency TerminalViewDelegate {
+    func send(source: TerminalView, data: ArraySlice<UInt8>) {
         guard let idString = source.identifier?.rawValue, let sessionID = UUID(uuidString: idString) else {
             return
         }
-        onSessionExited?(sessionID, exitCode)
+        onSendInput?(sessionID, data)
     }
 
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+    func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+        guard let idString = source.identifier?.rawValue, let sessionID = UUID(uuidString: idString) else {
+            return
+        }
+        let size = TerminalProcessSize(
+            columns: newCols,
+            rows: newRows,
+            pixelWidth: Int(source.frame.width),
+            pixelHeight: Int(source.frame.height)
+        )
+        onResizeSession?(sessionID, size)
+    }
+
+    func setTerminalTitle(source: TerminalView, title: String) {}
 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+    func scrolled(source: TerminalView, position: Double) {}
+
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        guard let url = URL(string: link) else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    func bell(source: TerminalView) {
+        NSSound.beep()
+    }
+
+    func clipboardCopy(source: TerminalView, content: Data) {
+        guard let string = String(data: content, encoding: .utf8) else {
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+    }
+
+    func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
+
+    func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }

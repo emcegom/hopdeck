@@ -193,13 +193,18 @@ Completed in `native/`:
   `HopdeckNativeCoreChecks`.
 - AppKit main window, native toolbar, split view, sidebar, workspace, and host
   inspector.
-- SwiftTerm-backed local shell startup and `/usr/bin/ssh` argv construction for
-  sample hosts.
-- `SessionManager` owns session identity, active session, close policy, and
-  session state transitions used by `Cmd+W`.
+- SwiftTerm-backed terminal renderer with Hopdeck-owned `TerminalProcessAdapter`
+  for local shell and `/usr/bin/ssh` processes.
+- `SessionManager` owns session identity, active session, child process
+  lifecycle, close policy, and session state transitions used by `Cmd+W`.
 - Tab selection is synchronized back to `SessionManager`.
-- Versioned host JSON store with a best-effort legacy import path.
-- Keychain credential store with opt-in checks only.
+- Versioned host/settings/workspace JSON stores with a best-effort legacy import
+  and migration path.
+- Host CRUD writes through `HostInventoryService`.
+- Keychain credential store plus `CredentialService`, with opt-in checks only.
+- Connection diagnostics and release readiness service skeletons.
+- AppKit UI skeleton for Smart Views, folders, host CRUD, settings, and
+  connection diagnostics.
 - Local `.app` package script that embeds SwiftTerm resources and applies
   ad-hoc signing for local validation.
 
@@ -210,10 +215,11 @@ Verified:
 - `native/scripts/package-spike-app.sh`
 - `codesign -dv native/.build/HopdeckNative.app`
 
-Deferred to later implementation phases:
+Remaining production hardening:
 
-- Hopdeck-owned `PTYProcessAdapter` that removes the remaining SwiftTerm
-  local-process convenience ownership.
 - Signed, notarized release archives and Sparkle appcast generation.
-- Real host CRUD, settings, split panes, SSH config import, and full workspace
-  persistence.
+- Real Sparkle 2 runtime integration.
+- Full SSH config import, jump-chain builder UI, split panes, and workspace
+  restore behavior.
+- Deeper runtime diagnostics that execute reachability and credential checks
+  instead of only producing a static report.
