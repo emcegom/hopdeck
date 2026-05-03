@@ -1,6 +1,6 @@
 # Hopdeck Native Swift Implementation Plan
 
-Hopdeck Native is a ground-up macOS implementation, not a port of the current
+Hopdeck Native is a ground-up macOS implementation, not a port of the previous
 Tauri UI. The target architecture is Swift/AppKit + SwiftTerm + system
 OpenSSH + PTY + Keychain + Sparkle.
 
@@ -73,7 +73,7 @@ Goal: validate the hardest technical risk before rebuilding the whole product.
 
 Scope:
 
-- Create `native/` Swift Package.
+- Create the root Swift Package.
 - Launch an AppKit app from SwiftPM.
 - Render a native window with sidebar and workspace area.
 - Embed SwiftTerm.
@@ -171,23 +171,23 @@ Sparkle appcast
 GitHub Release
 ```
 
-The current Tauri updater key is not reused. Apple signing and Sparkle update
+The previous Tauri updater key is not reused. Apple signing and Sparkle update
 signing are separate.
 
 ## Current Branch Plan
 
-Implementation starts on:
+Root native implementation starts on:
 
 ```text
-codex/native-swift-spike
+codex/native-swift-root
 ```
 
-The current Tauri app remains available on `main` until the native spike passes
-the terminal, data, and release checks.
+The previous Tauri/Rust/React implementation is removed on this branch. `main`
+can keep carrying the old implementation until the native branch is accepted.
 
 ## Current Implementation Status
 
-Completed in `native/`:
+Completed in the root Swift package:
 
 - SwiftPM package with `HopdeckNative`, `HopdeckNativeCore`, and
   `HopdeckNativeCoreChecks`.
@@ -212,8 +212,8 @@ Verified:
 
 - `swift build`
 - `swift run HopdeckNativeCoreChecks`
-- `native/scripts/package-spike-app.sh`
-- `codesign -dv native/.build/HopdeckNative.app`
+- `scripts/package-app.sh`
+- `codesign -dv .build/Hopdeck.app`
 
 Remaining production hardening:
 

@@ -7,23 +7,14 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  swift:
     runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+      - name: Build
+        run: swift build
 
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build frontend
-        run: npm run frontend:build
-
-      - name: Test Rust backend
-        working-directory: src-tauri
-        run: cargo test
+      - name: Core checks
+        run: swift run HopdeckNativeCoreChecks

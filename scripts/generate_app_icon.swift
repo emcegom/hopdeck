@@ -7,21 +7,15 @@ struct IconSize {
 }
 
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-let iconsDirectory = root.appendingPathComponent("src-tauri/icons", isDirectory: true)
-let iconsetDirectory = iconsDirectory.appendingPathComponent("Hopdeck.iconset", isDirectory: true)
+let assetsDirectory = root.appendingPathComponent("assets", isDirectory: true)
+let iconsetDirectory = assetsDirectory.appendingPathComponent("AppIcon.iconset", isDirectory: true)
+let icnsURL = assetsDirectory.appendingPathComponent("AppIcon.icns")
 
-try FileManager.default.createDirectory(at: iconsDirectory, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(at: assetsDirectory, withIntermediateDirectories: true)
 if FileManager.default.fileExists(atPath: iconsetDirectory.path) {
     try FileManager.default.removeItem(at: iconsetDirectory)
 }
 try FileManager.default.createDirectory(at: iconsetDirectory, withIntermediateDirectories: true)
-
-let appSizes = [
-    IconSize(fileName: "32x32.png", pixels: 32),
-    IconSize(fileName: "128x128.png", pixels: 128),
-    IconSize(fileName: "128x128@2x.png", pixels: 256),
-    IconSize(fileName: "icon.png", pixels: 1024),
-]
 
 let iconsetSizes = [
     IconSize(fileName: "icon_16x16.png", pixels: 16),
@@ -36,12 +30,17 @@ let iconsetSizes = [
     IconSize(fileName: "icon_512x512@2x.png", pixels: 1024),
 ]
 
-for size in appSizes {
-    try writeIcon(size: size.pixels, to: iconsDirectory.appendingPathComponent(size.fileName))
-}
-
 for size in iconsetSizes {
     try writeIcon(size: size.pixels, to: iconsetDirectory.appendingPathComponent(size.fileName))
+}
+
+let process = Process()
+process.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+process.arguments = ["-c", "icns", iconsetDirectory.path, "-o", icnsURL.path]
+try process.run()
+process.waitUntilExit()
+guard process.terminationStatus == 0 else {
+    throw NSError(domain: "HopdeckIcon", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "iconutil failed"])
 }
 
 func writeIcon(size: Int, to url: URL) throws {

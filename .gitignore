@@ -1,16 +1,12 @@
 .DS_Store
 
-# Node / frontend
-node_modules/
-dist/
-.vite/
-
-# Rust / Tauri
-target/
-src-tauri/target/
-src-tauri/gen/schemas/
-native/.build/
-native/.swiftpm/
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
 
 # Local Hopdeck data
 .hopdeck/
@@ -18,7 +14,15 @@ native/.swiftpm/
 *.tmp
 *.key
 *.key.pub
-release/*.dmg
+
+# Release artifacts
+release/
+*.dmg
+*.zip
+*.tar.gz
+
+# Generated icon working set
+assets/*.iconset/
 
 # IDE
 .idea/
